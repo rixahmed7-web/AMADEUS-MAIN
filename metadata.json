@@ -1,0 +1,6 @@
+{
+  "name": "Amadeus Selling Platform Connect",
+  "description": "Realistic Amadeus Selling Platform Connect Web Simulator for airline ticketing training with authentication, command terminal, and GDS workflow engine.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
