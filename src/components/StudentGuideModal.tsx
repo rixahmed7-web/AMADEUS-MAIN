@@ -102,14 +102,24 @@ export const StudentGuideModal: React.FC<StudentGuideModalProps> = ({
     },
     {
       step: 12,
-      title: 'Email Itinerary / Receipt',
-      command: 'IEPJ-EML-TRAVELER@GMAIL.COM',
-      syntax: 'IEPJ-EML-<EMAIL> or ITR-EML-<EMAIL>',
-      description: 'Sends the confirmed itinerary or official e-ticket receipt directly via email.',
+      title: 'Print / Download Itinerary Receipt',
+      command: 'ITR',
+      syntax: 'ITR or ITR/P1',
+      description: 'Generates official Amadeus Passenger Itinerary & Receipt and triggers print / PDF download.',
+    },
+    {
+      step: 13,
+      title: 'Email E-Ticket Receipt to Client',
+      command: 'ITR-EML-CLIENT@GMAIL.COM',
+      syntax: 'ITR-EML-<EMAIL> or IEPJ-EML-<EMAIL>',
+      description: 'Dispatches the official electronic ticket receipt directly to the passenger email.',
     },
   ];
 
   const helperCommands = [
+    { cmd: 'ITR', desc: 'Display & download/print e-ticket receipt' },
+    { cmd: 'ITR-EML-CLIENT@GMAIL.COM', desc: 'Email e-ticket receipt to passenger' },
+    { cmd: 'IEPJ-EML-CLIENT@GMAIL.COM', desc: 'Email flight itinerary to passenger' },
     { cmd: 'TN20SEPDACSIN/ABG', desc: 'Timetable schedule search (TN)' },
     { cmd: 'FQDDACJFK/AEK/IO/D15MAY22', desc: 'Fare quote displayDAC-JFK (FQD)' },
     { cmd: 'FQN01', desc: 'Fare rules & penalty notes (FQN)' },

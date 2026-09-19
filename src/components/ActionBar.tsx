@@ -173,6 +173,13 @@ export const ActionBar: React.FC<ActionBarProps> = ({
             >
               RT
             </button>
+            <button
+              onClick={() => onExecuteAction('ITR')}
+              className="px-1.5 py-0.5 hover:bg-white rounded-xs transition-colors cursor-pointer text-[11px] font-mono border border-transparent hover:border-[#ccd7e6] text-[#005eb8] font-bold"
+              title="Print/Download E-Ticket Itinerary Receipt: ITR"
+            >
+              ITR
+            </button>
           </div>
         </div>
 

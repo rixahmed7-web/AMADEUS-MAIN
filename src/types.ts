@@ -165,11 +165,60 @@ export interface PnrSession {
   lastFareSearch?: FareSearchOption[];
 }
 
+export interface ItrFlightSegment {
+  segNum: string;
+  airline: string;
+  airlineName: string;
+  flightNumber: string;
+  bookingClass: string;
+  date: string;
+  origin: string;
+  originName: string;
+  originTerminal?: string;
+  destination: string;
+  destName: string;
+  destTerminal?: string;
+  depTime: string;
+  arrTime: string;
+  status: string;
+  nvb: string;
+  nva: string;
+  baggage: string;
+  equip?: string;
+}
+
+export interface ItrReceiptData {
+  ticketNumber: string;
+  pnrLocator: string;
+  airlineLocator: string;
+  passengerName: string;
+  paxType?: string;
+  issuingAirline: string;
+  issuingAirlineName: string;
+  issuingAirlineNumeric: string;
+  issuingAgent: string;
+  officeId: string;
+  iataNumber: string;
+  issueDate: string;
+  segments: ItrFlightSegment[];
+  baseFare: number;
+  tax: number;
+  totalFare: number;
+  currency: string;
+  formOfPayment: string;
+  fareBasis: string;
+  fareCalculation: string;
+  endorsements: string;
+  commission?: string;
+}
+
 export interface TerminalOutputItem {
   id: string;
   type: 'command' | 'response' | 'error' | 'planned_info';
   content: string;
   rawHtml?: boolean;
+  isItr?: boolean;
+  itrData?: ItrReceiptData;
 }
 
 export interface CommandPageTab {

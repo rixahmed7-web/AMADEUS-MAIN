@@ -1,6 +1,7 @@
-import React, { useState, useRef } from 'react';
-import { PnrSession, TerminalOutputItem, CommandPageTab } from './types';
+import React, { useState, useRef, useEffect } from 'react';
+import { PnrSession, TerminalOutputItem, CommandPageTab, ItrReceiptData } from './types';
 import { createInitialSession, executeGdsCommand } from './utils/gdsEngine';
+import { printItrDocument } from './utils/itrReceipt';
 import { LoginScreen } from './components/LoginScreen';
 import { AmadeusHeader } from './components/AmadeusHeader';
 import { ActionBar } from './components/ActionBar';
@@ -9,6 +10,8 @@ import { StatusBar } from './components/StatusBar';
 import { StudentGuideModal } from './components/StudentGuideModal';
 import { PnrOverviewPanel } from './components/PnrOverviewPanel';
 import { PartnerBadges } from './components/PartnerBadges';
+import { ItrReceiptModal } from './components/ItrReceiptModal';
+import { Check, X } from 'lucide-react';
 
 export default function App() {
   // Authentication state
@@ -56,6 +59,19 @@ export default function App() {
   // UI state
   const [isHelpOpen, setIsHelpOpen] = useState<boolean>(false);
   const [isSplitView, setIsSplitView] = useState<boolean>(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [activeItrData, setActiveItrData] = useState<ItrReceiptData | null>(null);
+  const [isItrModalOpen, setIsItrModalOpen] = useState<boolean>(false);
+
+  // Auto-dismiss toast notification after 5 seconds
+  useEffect(() => {
+    if (toastMessage) {
+      const timer = setTimeout(() => {
+        setToastMessage(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [toastMessage]);
 
   // Handle successful login
   const handleLoginSuccess = (userData: { username: string; officeId: string; dutyCode: string }) => {
@@ -193,10 +209,26 @@ export default function App() {
       return;
     }
 
+    // If email was dispatched, show realistic green toast notification
+    if (result.emailSent) {
+      setToastMessage(result.emailSent.message);
+    }
+
+    // If ITR was triggered, auto-trigger clean print window and store receipt data
+    if (result.itrData) {
+      setActiveItrData(result.itrData);
+    }
+
+    if (result.triggerPrint && result.itrData) {
+      printItrDocument(result.itrData);
+    }
+
     const responseItem: TerminalOutputItem = {
       id: `res-${Date.now() + 1}`,
       type: 'response',
       content: result.output,
+      isItr: Boolean(result.itrData || result.triggerPrint),
+      itrData: result.itrData,
     };
 
     // Prepend new command and response to the top of outputs so latest is always at Line 1
@@ -280,6 +312,18 @@ export default function App() {
           isSplitView={isSplitView}
           onSelectFlightLine={handleSelectFlightLine}
           onSelectFlightDo={handleSelectFlightDo}
+          onOpenItrModal={(data) => {
+            setActiveItrData(data);
+            setIsItrModalOpen(true);
+          }}
+          onPrintItr={(data) => {
+            const target = data || activeItrData;
+            if (target) {
+              printItrDocument(target);
+            } else {
+              handleExecuteCommand('ITR');
+            }
+          }}
         />
 
         {/* Live PNR Buffer Inspection Panel when split view is active */}
@@ -312,6 +356,35 @@ export default function App() {
 
       {/* 6. Floating Partner Badges (Sabre & Travelport) */}
       <PartnerBadges />
+
+      {/* 7. Realistic Email Dispatch Green Toast Notification */}
+      {toastMessage && (
+        <div
+          id="email-dispatch-toast"
+          className="fixed top-14 right-6 z-50 bg-[#00703c] text-white px-4 py-3 rounded shadow-xl flex items-center gap-3 border border-emerald-400 animate-in slide-in-from-top-3 fade-in duration-200 select-text"
+          role="alert"
+        >
+          <div className="w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center shrink-0">
+            <Check className="w-4 h-4 text-white" />
+          </div>
+          <div className="text-xs font-semibold tracking-wide">{toastMessage}</div>
+          <button
+            onClick={() => setToastMessage(null)}
+            className="ml-2 text-emerald-200 hover:text-white p-1 rounded transition-colors cursor-pointer"
+            aria-label="Dismiss notification"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* 8. Amadeus Passenger Itinerary & Receipt Modal (View / Print / Email) */}
+      <ItrReceiptModal
+        isOpen={isItrModalOpen}
+        data={activeItrData}
+        onClose={() => setIsItrModalOpen(false)}
+        onSendEmail={(email) => handleExecuteCommand(`ITR-EML-${email}`)}
+      />
     </div>
   );
 }

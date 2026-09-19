@@ -1,4 +1,4 @@
-import { BookedSegment, Passenger, PnrSession, SsrItem, TicketSaleRecord } from '../types';
+import { BookedSegment, Passenger, PnrSession, SsrItem, TicketSaleRecord, ItrReceiptData } from '../types';
 import { handleEncodeDecodeCommand } from './encodeDecode';
 import {
   generateAvailability,
@@ -7,14 +7,24 @@ import {
   generateFareDisplay,
   generateFareNotes,
   convertCurrency,
+  parseAnInput,
+  calculateSectorFare,
 } from './flightScheduleGenerator';
 import { AIRLINES } from '../data/gdsDatabase';
+import { buildItrReceiptData, formatItrTerminalOutput } from './itrReceipt';
 
 export interface CommandResult {
   output: string;
   updatedSession: PnrSession;
   clearTerminal?: boolean;
   navAction?: 'down' | 'up' | 'top' | 'bottom';
+  triggerPrint?: boolean;
+  emailSent?: {
+    type: 'receipt' | 'itinerary';
+    email: string;
+    message: string;
+  };
+  itrData?: ItrReceiptData;
 }
 
 // Global in-memory ticket sales database for TJQ, TWD, and TRDC
@@ -170,16 +180,25 @@ export const executeGdsCommand = (
     const parts = trimmed.split(';').map((p) => p.trim()).filter(Boolean);
     let activeSession = currentSession;
     const outputs: string[] = [];
+    let triggerPrint = false;
+    let emailSent: CommandResult['emailSent'] = undefined;
+    let itrData: CommandResult['itrData'] = undefined;
 
     for (const part of parts) {
       const res = executeSingleGdsCommand(part, activeSession, savedPnrs);
       activeSession = res.updatedSession;
       if (res.output) outputs.push(res.output);
+      if (res.triggerPrint) triggerPrint = true;
+      if (res.emailSent) emailSent = res.emailSent;
+      if (res.itrData) itrData = res.itrData;
     }
 
     return {
       output: outputs.join('\n\n'),
       updatedSession: activeSession,
+      triggerPrint,
+      emailSent,
+      itrData,
     };
   }
 
@@ -244,41 +263,10 @@ const executeSingleGdsCommand = (
     }
   }
 
-  // 1. Availability: AN (e.g. AN20MAYDACLHR/AQR, AN15OCTDACDXB, AN25DECDACJFK/AEK, AN20MAYDACLHR)
+  // 1. Availability: AN (e.g. AN20MAYDACLHR/AQR, AN15OCTDACDXB, AN25DECDACJFK/AEK, AN25OCTDACJED/ASV)
   if (upper.startsWith('AN')) {
-    // Parsing AN string: AN [date] [city pair] [/A airline]
-    // Examples: AN20MAYDACLHR/AQR, AN15OCTDACDXB, AN25DECDACJFK/AEK
-    const afterAn = upper.substring(2).trim();
-
-    // Match optional date (e.g. 20MAY, 15OCT, 25DEC), city pair (6 letters), optional /A airline
-    const match = afterAn.match(/^(?:(\d{1,2}[A-Z]{3}))?([A-Z]{3})([A-Z]{3})(?:\/A([A-Z0-9]{2}))?/);
-
-    let date = '20MAY';
-    let origin = 'DAC';
-    let destination = 'LHR';
-    let airlineFilter: string | undefined = undefined;
-
-    if (match) {
-      date = match[1] || '20MAY';
-      origin = match[2];
-      destination = match[3];
-      airlineFilter = match[4];
-    } else {
-      // Fallback extraction
-      const parts = afterAn.split('/');
-      const mainPart = parts[0];
-      if (parts[1] && parts[1].startsWith('A')) {
-        airlineFilter = parts[1].substring(1);
-      }
-      const pairMatch = mainPart.match(/([A-Z]{3})([A-Z]{3})$/);
-      if (pairMatch) {
-        origin = pairMatch[1];
-        destination = pairMatch[2];
-        date = mainPart.replace(pairMatch[0], '') || '20MAY';
-      }
-    }
-
-    const { options, displayText } = generateAvailability(date, origin, destination, airlineFilter);
+    const { orig, dest, date, airlineFilter } = parseAnInput(input);
+    const { options, displayText } = generateAvailability(date, orig, dest, airlineFilter);
 
     const updated = {
       ...currentSession,
@@ -476,15 +464,16 @@ const executeSingleGdsCommand = (
     const selectedOption = fareOptions.find((o) => o.optionNumber === optNum) || fareOptions[0];
 
     // Convert fare search flights into booked segments
+    const paxStatus = `HK${(selectedOption.paxCount?.adt || 1) + (selectedOption.paxCount?.chd || 0)}`;
     const newSegments: BookedSegment[] = selectedOption.flights.map((flt, idx) => ({
-      segmentNumber: currentSession.segments.length + idx + 1,
+      segmentNumber: idx + 1,
       airline: flt.airline,
       flightNumber: flt.flightNumber,
       bookingClass: flt.bookingClass,
       date: flt.date,
       origin: flt.origin,
       destination: flt.destination,
-      status: 'HK1',
+      status: paxStatus,
       depTime: flt.depTime,
       arrTime: flt.arrTime,
     }));
@@ -495,11 +484,12 @@ const executeSingleGdsCommand = (
       total: selectedOption.totalFare,
       currency: selectedOption.currency,
       fareBasis: selectedOption.fareBasis,
+      paxBreakdown: `${selectedOption.paxCount?.adt || 1} ADT${selectedOption.paxCount?.chd ? `, ${selectedOption.paxCount.chd} CHD` : ''}${selectedOption.paxCount?.inf ? `, ${selectedOption.paxCount.inf} INF` : ''}`,
     };
 
     const updated: PnrSession = {
       ...currentSession,
-      segments: [...currentSession.segments, ...newSegments],
+      segments: newSegments,
       pricing: updatedPricing,
     };
 
@@ -1086,8 +1076,14 @@ const executeSingleGdsCommand = (
     const chdCount = currentSession.passengers.filter((p) => p.type === 'CHD').length;
     const infCount = currentSession.passengers.filter((p) => p.type === 'INF').length;
 
-    const baseUnitFare = 85000;
-    const taxesUnit = 14500;
+    const firstSeg = currentSession.segments[0];
+    const lastSeg = currentSession.segments[currentSession.segments.length - 1];
+    const isBusiness = firstSeg?.bookingClass === 'J' || firstSeg?.bookingClass === 'C';
+    const isRoundTrip = currentSession.segments.length > 1 && lastSeg?.destination === firstSeg?.origin;
+
+    const dynamicSector = calculateSectorFare(firstSeg?.origin || 'DAC', lastSeg?.destination || 'JED', isBusiness, isRoundTrip);
+    const baseUnitFare = currentSession.pricing?.baseFare ? Math.round(currentSession.pricing.baseFare / (adtCount || 1)) : dynamicSector.base;
+    const taxesUnit = currentSession.pricing?.taxes ? Math.round(currentSession.pricing.taxes / (adtCount || 1)) : dynamicSector.tax;
 
     const adtTotal = (baseUnitFare + taxesUnit) * adtCount;
     const chdTotal = Math.round(((baseUnitFare * 0.75) + (taxesUnit * 0.85)) * chdCount);
@@ -1110,22 +1106,30 @@ const executeSingleGdsCommand = (
       ? `${currentSession.passengers[0].surname}/${currentSession.passengers[0].firstName} ${currentSession.passengers[0].title}`
       : 'HOSSAIN/ABUL MR';
 
-    const firstSeg = currentSession.segments[0];
-    const secondSeg = currentSession.segments[1];
+    const segLines: string[] = [];
+    if (firstSeg) {
+      segLines.push(firstSeg.origin);
+      currentSession.segments.forEach((seg) => {
+        segLines.push(
+          `${seg.destination} ${seg.airline}  ${seg.flightNumber.padEnd(4, ' ')} ${seg.bookingClass} Y ${seg.date} ${seg.depTime} ${pricing.fareBasis}                  2PC`
+        );
+      });
+    }
 
     const isStored = upper.startsWith('FXP');
+    const fareCalcRoute = currentSession.segments.length > 0
+      ? currentSession.segments.map((s) => `${s.origin} ${s.airline}`).join(' ') + ` ${lastSeg?.destination || ''}`
+      : 'DAC SV JED';
 
     const output = [
       `01 ${firstPax}`,
-      `LAST TKT DTE 20MAY26 - DATE OF ORIGIN`,
+      `LAST TKT DTE ${firstSeg ? firstSeg.date : '25OCT26'} - DATE OF ORIGIN`,
       `------------------------------------------------------------`,
       `AL FLGT  BK T DATE  TIME  FARE BASIS      NVB  NVA   BG`,
-      `${firstSeg ? firstSeg.origin : 'DAC'}`,
-      `${firstSeg ? `${firstSeg.destination} ${firstSeg.airline}  ${firstSeg.flightNumber.padEnd(4, ' ')} ${firstSeg.bookingClass} Y ${firstSeg.date} ${firstSeg.depTime} YLRBD1                  2PC` : ''}`,
-      `${secondSeg ? `${secondSeg.destination} ${secondSeg.airline}  ${secondSeg.flightNumber.padEnd(4, ' ')} ${secondSeg.bookingClass} Y ${secondSeg.date} ${secondSeg.depTime} YLRBD1                  2PC` : ''}`,
+      ...segLines,
       ``,
-      `BDT       ${grandBase.toLocaleString()}                   20MAY26DAC QR X/DOH BA LON804.82NUC`,
-      `BDT       ${grandTax.toLocaleString()}TAX                804.82END ROE105.613XT2000BD7500QA5000GB`,
+      `BDT       ${grandBase.toLocaleString()}                   ${firstSeg ? firstSeg.date : '25OCT26'}${fareCalcRoute} NUC`,
+      `BDT       ${grandTax.toLocaleString()}TAX                END ROE119.50XT${grandTax}XT`,
       `BDT       ${grandTotal.toLocaleString()}TOT`,
       `PAGE 1/1`,
       isStored ? `TST 00001 CREATED` : `NO TST CREATED (QUOTATION ONLY)`,
@@ -1579,34 +1583,92 @@ const executeSingleGdsCommand = (
     }
   }
 
-  // 16. Emailing: IEPJ-EML- / ITR-EML-
-  // - IEPJ-EML-ABCD@GMAIL.COM (Itinerary Email)
-  // - ITR-EML-ABD@GMAIL.COM (E-Ticket Receipt)
-  if (upper.startsWith('IEPJ-EML-') || upper.startsWith('IEPJ-EML:')) {
-    const email = input.substring(9).replace('//', '@').trim();
-    if (!currentSession.pnrLocator) {
+  // 16. Electronic Ticket Itinerary Receipt & Email Dispatch:
+  // - ITR (Display and trigger download/print for Electronic Ticket Receipt)
+  // - ITR-EML-<EMAIL> / ITR/EML-<EMAIL> / ITR -EML-<EMAIL> / ITR-EMLA-<EMAIL> / itr-emla-<email>
+  // - IEPJ-EML-<EMAIL> / IEPJ/EML-<EMAIL> / IEPJ -EML-<EMAIL> / IEPJ-EMLA-<EMAIL> / iepj-emla-<email>
+
+  // A. ITR Email Dispatch:
+  const itrEmailMatch = input.match(/^(?:ITR)\s*[-/]?\s*EML[A]?[-:]\s*(.+)$/i);
+  if (itrEmailMatch) {
+    const rawEmail = itrEmailMatch[1].replace('//', '@').trim();
+    const itrData = buildItrReceiptData(currentSession, ticketSalesDatabase);
+    if (!itrData) {
+      return {
+        output: 'NO ACTIVE ELECTRONIC TICKET RECORD - ISSUE TICKET FIRST (TTP)',
+        updatedSession: currentSession,
+      };
+    }
+
+    const emailUpper = rawEmail.toUpperCase();
+    const output = [
+      `OK - ITINERARY RECEIPT SENT TO ${emailUpper}`,
+      `MAIL TRANSMISSION SUCCESSFUL`,
+      `RLOC: 1A/${itrData.pnrLocator}    TKT: ${itrData.ticketNumber}    PAX: ${itrData.passengerName}`,
+      `TOTAL: ${itrData.currency} ${itrData.totalFare.toLocaleString()}`,
+    ].join('\n');
+
+    return {
+      output,
+      updatedSession: currentSession,
+      emailSent: {
+        type: 'receipt',
+        email: rawEmail,
+        message: `Success: Electronic Ticket Receipt successfully dispatched to ${rawEmail}`,
+      },
+      itrData,
+    };
+  }
+
+  // B. IEPJ Itinerary Email Dispatch:
+  const iepjEmailMatch = input.match(/^(?:IEPJ)\s*[-/]?\s*EML[A]?[-:]\s*(.+)$/i);
+  if (iepjEmailMatch) {
+    const rawEmail = iepjEmailMatch[1].replace('//', '@').trim();
+    if (!currentSession.pnrLocator && currentSession.segments.length === 0) {
       return {
         output: 'NO ACTIVE RECORD LOCATOR IN WORK AREA. SAVE WITH ER FIRST.',
         updatedSession: currentSession,
       };
     }
+
+    const emailUpper = rawEmail.toUpperCase();
+    const pnr = currentSession.pnrLocator || 'X7K9LP';
+    const output = [
+      `OK - ITINERARY RECEIPT SENT TO ${emailUpper}`,
+      `MAIL TRANSMISSION SUCCESSFUL`,
+      `RECORD LOCATOR: ${pnr}`,
+    ].join('\n');
+
     return {
-      output: `OK - ITINERARY EMAIL SENT TO ${email}\nRECORD LOCATOR: ${currentSession.pnrLocator}`,
+      output,
       updatedSession: currentSession,
+      emailSent: {
+        type: 'itinerary',
+        email: rawEmail,
+        message: `Success: Electronic Ticket Receipt successfully dispatched to ${rawEmail}`,
+      },
     };
   }
 
-  if (upper.startsWith('ITR-EML-') || upper.startsWith('ITR-EML:')) {
-    const email = input.substring(8).replace('//', '@').trim();
-    if (!currentSession.isTicketed) {
+  // C. ITR Display & Print:
+  // Matches: ITR, itr, ITR/P1, ITR/L1, ITR/TKT, ITR-L1, ITR -L1, etc.
+  const isItrDisplay = /^ITR(?:\s*|\/.*|-L\d+)?$/i.test(input);
+  if (isItrDisplay) {
+    const itrData = buildItrReceiptData(currentSession, ticketSalesDatabase);
+    if (!itrData) {
       return {
-        output: 'NO ISSUED E-TICKET TO TRANSMIT. ISSUE TICKET WITH TTP FIRST.',
+        output: 'NO ACTIVE ELECTRONIC TICKET RECORD - ISSUE TICKET FIRST (TTP)',
         updatedSession: currentSession,
       };
     }
+
+    const formattedOutput = formatItrTerminalOutput(itrData);
+
     return {
-      output: `OK - E-TICKET RECEIPT SENT TO ${email}\nTICKET NO: ${currentSession.ticketNumbers.join(', ')}\nTOTAL: BDT ${currentSession.pricing?.total.toLocaleString()}`,
+      output: formattedOutput,
       updatedSession: currentSession,
+      triggerPrint: true,
+      itrData,
     };
   }
 
