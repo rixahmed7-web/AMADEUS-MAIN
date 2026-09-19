@@ -178,18 +178,34 @@ export default function App() {
       return;
     }
 
+    // If navigation command (MD, MU, MT, MB), perform scrolling action without adding text clutter
+    if (result.navAction) {
+      setTabs((prev) =>
+        prev.map((t) =>
+          t.id === activeTabId
+            ? {
+                ...t,
+                commandHistory: [...t.commandHistory, cmd],
+              }
+            : t
+        )
+      );
+      return;
+    }
+
     const responseItem: TerminalOutputItem = {
       id: `res-${Date.now() + 1}`,
       type: 'response',
       content: result.output,
     };
 
+    // Prepend new command and response to the top of outputs so latest is always at Line 1
     setTabs((prev) =>
       prev.map((t) =>
         t.id === activeTabId
           ? {
               ...t,
-              outputs: [...t.outputs, cmdItem, responseItem],
+              outputs: [cmdItem, responseItem, ...t.outputs],
               commandHistory: [...t.commandHistory, cmd],
             }
           : t

@@ -128,15 +128,40 @@ export const PnrOverviewPanel: React.FC<PnrOverviewPanelProps> = ({
                 <div key={p.id} className="p-1 bg-[#f4f7fa] rounded-xs flex items-center justify-between">
                   <span>
                     {p.id}. {p.surname}/{p.firstName} {p.title}
+                    {p.dob ? ` (${p.type}/${p.dob})` : ''}
                   </span>
                   <span className="text-[10px] text-gray-500 bg-white px-1 border border-gray-200 rounded-xs">
-                    ADT
+                    {p.type || 'ADT'}
                   </span>
                 </div>
               ))}
             </div>
           )}
         </div>
+
+        {/* Special Service Requests (SSR) */}
+        {session.ssrs && session.ssrs.length > 0 && (
+          <div className="bg-white p-3 rounded-[3px] border border-[#d8e3f0] shadow-2xs">
+            <div className="font-semibold text-[#1e293b] mb-2 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <Ticket className="w-3.5 h-3.5 text-[#005eb8]" />
+                <span>Special Services (SSR) ({session.ssrs.length})</span>
+              </span>
+              <span className="text-[10px] text-[#005eb8] font-bold">HK1 CONFIRMED</span>
+            </div>
+            <div className="space-y-1.5 font-mono text-[10px]">
+              {session.ssrs.map((s) => (
+                <div key={s.id} className="p-1.5 bg-[#f0f5fa] border border-[#d9e6f2] rounded-xs text-[#203a5b]">
+                  <div className="font-bold flex justify-between">
+                    <span>SSR {s.code} ({s.type})</span>
+                    <span className="text-[9px] bg-white px-1 rounded-xs">{s.paxRef}</span>
+                  </div>
+                  <div className="truncate mt-0.5 text-[#445566]">{s.text}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Flight Segments */}
         <div className="bg-white p-3 rounded-[3px] border border-[#d8e3f0] shadow-2xs">
