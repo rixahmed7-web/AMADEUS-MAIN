@@ -187,29 +187,61 @@ export interface ItrFlightSegment {
   equip?: string;
 }
 
+export interface ItrPassengerDetail {
+  passengerIndex: number;
+  fullName: string;
+  surname: string;
+  firstName: string;
+  title?: string;
+  paxType: 'ADT' | 'CHD' | 'INF' | string;
+  ticketNumber: string;
+  couponStatus?: string;
+}
+
+export interface ItrBaggageAllowance {
+  paxName: string;
+  paxType: string;
+  segmentNum: string;
+  flight: string;
+  route: string;
+  checkedBag: string;
+  cabinBag: string;
+}
+
 export interface ItrReceiptData {
   ticketNumber: string;
+  ticketNumbers: string[];
   pnrLocator: string;
   airlineLocator: string;
   passengerName: string;
   paxType?: string;
+  passengers: ItrPassengerDetail[];
   issuingAirline: string;
   issuingAirlineName: string;
   issuingAirlineNumeric: string;
+  airlineLogoUrl?: string;
+  airlineBrandColor?: string;
   issuingAgent: string;
   officeId: string;
   iataNumber: string;
   issueDate: string;
   segments: ItrFlightSegment[];
+  baggageAllowances: ItrBaggageAllowance[];
   baseFare: number;
   tax: number;
   totalFare: number;
+  grandTotalFare: number;
   currency: string;
   formOfPayment: string;
   fareBasis: string;
   fareCalculation: string;
   endorsements: string;
   commission?: string;
+  fareBreakdownPerPax?: {
+    adt?: { count: number; base: number; tax: number; total: number };
+    chd?: { count: number; base: number; tax: number; total: number };
+    inf?: { count: number; base: number; tax: number; total: number };
+  };
 }
 
 export interface TerminalOutputItem {

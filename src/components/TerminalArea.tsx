@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { TerminalOutputItem, ItrReceiptData } from '../types';
-import { printItrDocument, downloadItrTextFile } from '../utils/itrReceipt';
-import { Printer, Download, FileText } from 'lucide-react';
+import { printItrDocument, downloadItrTextFile, downloadItrPdfFile } from '../utils/itrReceipt';
+import { Printer, Download, FileText, Loader2 } from 'lucide-react';
 
 interface TerminalAreaProps {
   outputs: TerminalOutputItem[];
@@ -26,8 +26,21 @@ export const TerminalArea: React.FC<TerminalAreaProps> = ({
 }) => {
   const [currentInput, setCurrentInput] = useState('');
   const [historyIndex, setHistoryIndex] = useState<number>(-1);
+  const [pdfLoadingId, setPdfLoadingId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  const handleDownloadPdf = async (item: TerminalOutputItem) => {
+    if (!item.itrData) return;
+    try {
+      setPdfLoadingId(item.id);
+      await downloadItrPdfFile(item.itrData);
+    } catch (err) {
+      console.error('Failed to download PDF:', err);
+    } finally {
+      setPdfLoadingId(null);
+    }
+  };
 
   // Keep focus on the terminal prompt
   const focusPrompt = () => {
@@ -347,6 +360,27 @@ export const TerminalArea: React.FC<TerminalAreaProps> = ({
                     <div className="flex items-center gap-2 flex-wrap">
                       <button
                         type="button"
+                        id={`btn-download-pdf-${item.id}`}
+                        onClick={() => handleDownloadPdf(item)}
+                        disabled={pdfLoadingId === item.id}
+                        className="px-3 py-1.5 bg-[#005eb8] hover:bg-[#00478c] text-white text-xs font-bold rounded-[3px] flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer disabled:opacity-75"
+                        title="Directly Download PDF Document without print dialog"
+                      >
+                        {pdfLoadingId === item.id ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            <span>Downloading PDF...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Download className="w-3.5 h-3.5" />
+                            <span>📥 Download Itinerary Receipt</span>
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
                         id={`btn-print-itr-${item.id}`}
                         onClick={() => {
                           if (item.itrData) {
@@ -355,21 +389,22 @@ export const TerminalArea: React.FC<TerminalAreaProps> = ({
                             onPrintItr(item.itrData);
                           }
                         }}
-                        className="px-3 py-1.5 bg-[#005eb8] hover:bg-[#00478c] text-white text-xs font-bold rounded-[3px] flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
-                        title="Download or Print Itinerary Receipt PDF"
+                        className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 text-xs font-semibold rounded-[3px] flex items-center gap-1.5 transition-colors cursor-pointer"
+                        title="Print or Save as PDF via standard print dialog"
                       >
                         <Printer className="w-3.5 h-3.5" />
-                        <span>📥 Download / Print Itinerary Receipt</span>
+                        <span>Print / Save PDF</span>
                       </button>
+
                       {item.itrData && (
                         <button
                           type="button"
                           id={`btn-download-txt-${item.id}`}
                           onClick={() => downloadItrTextFile(item.itrData!)}
-                          className="px-2.5 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 text-xs font-semibold rounded-[3px] flex items-center gap-1 transition-colors cursor-pointer"
+                          className="px-2 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 text-xs font-semibold rounded-[3px] flex items-center gap-1 transition-colors cursor-pointer"
                           title="Download plain text receipt (.txt)"
                         >
-                          <Download className="w-3 h-3" />
+                          <FileText className="w-3 h-3" />
                           <span>.txt</span>
                         </button>
                       )}
