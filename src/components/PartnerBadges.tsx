@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 
 export const PartnerBadges: React.FC = () => {
-  const [hoveredBadge, setHoveredBadge] = useState<'travelport' | 'sabre' | null>(null);
+  const [hoveredBadge, setHoveredBadge] = useState<'travelport' | 'sabre' | 'whatsapp' | null>(null);
 
   return (
     <aside
@@ -10,7 +10,70 @@ export const PartnerBadges: React.FC = () => {
       className="fixed bottom-[20px] right-[20px] z-[9999] pointer-events-auto flex items-center gap-2.5 sm:gap-3"
       style={{ zIndex: 9999 }}
     >
-      {/* 1. Sabre Logo Badge */}
+      {/* 1. WhatsApp Direct Chat Button */}
+      <a
+        href="https://wa.me/8801810666313"
+        target="_blank"
+        rel="noopener noreferrer"
+        id="whatsapp-chat-link"
+        aria-label="Chat on WhatsApp"
+        onMouseEnter={() => setHoveredBadge('whatsapp')}
+        onMouseLeave={() => setHoveredBadge(null)}
+        className="group relative flex items-center justify-center px-3 py-2 sm:px-3.5 sm:py-2.5 bg-white rounded-full shadow-[0_4px_16px_rgba(0,0,0,0.18)] hover:shadow-[0_8px_24px_rgba(37,211,102,0.32)] border border-[#e2e8f0] transition-all duration-300 ease-out hover:-translate-y-1 hover:scale-105 active:scale-95 cursor-pointer no-underline select-none"
+      >
+        {/* Official WhatsApp SVG Logo & Wordmark */}
+        <svg
+          viewBox="0 0 128 32"
+          className="h-5 sm:h-6 w-auto transition-transform duration-300 group-hover:scale-102"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+          aria-hidden="true"
+        >
+          {/* WhatsApp Green Speech Bubble Badge with White Receiver */}
+          <g transform="translate(1, 3)">
+            {/* Green speech bubble */}
+            <path
+              fill="#25D366"
+              d="M13 0C5.82 0 0 5.82 0 13c0 2.3.6 4.45 1.64 6.32L.1 25.5l6.39-1.51A12.93 12.93 0 0013 26c7.18 0 13-5.82 13-13S20.18 0 13 0z"
+            />
+            {/* White Telephone Handset */}
+            <path
+              fill="#FFFFFF"
+              d="M18.8 15.6c-.32-.16-1.89-.93-2.18-1.04-.29-.11-.5-.16-.71.16-.21.32-.82 1.04-1 1.25-.19.21-.37.24-.69.08-.32-.16-1.34-.49-2.55-1.57-.94-.84-1.58-1.88-1.77-2.19-.19-.32-.02-.49.14-.65.14-.14.32-.37.48-.55.16-.19.21-.32.32-.53.11-.21.05-.4-.03-.55-.08-.16-.71-1.72-.98-2.35-.26-.62-.52-.53-.71-.54-.19 0-.4-.01-.61-.01-.21 0-.55.08-.84.4-.29.32-1.11 1.08-1.11 2.64 0 1.56 1.14 3.07 1.3 3.28.16.21 2.24 3.42 5.43 4.79.76.33 1.35.52 1.81.67.76.24 1.46.21 2.01.12.61-.09 1.89-.77 2.16-1.52.26-.74.26-1.38.19-1.52-.08-.13-.29-.21-.61-.37z"
+            />
+          </g>
+
+          {/* Clean Typography: 'WhatsApp' wordmark */}
+          <text
+            x="33"
+            y="22"
+            fontFamily="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+            fontSize="16"
+            fontWeight="700"
+            letterSpacing="-0.3px"
+            fill="#1A1A1A"
+          >
+            WhatsApp
+          </text>
+        </svg>
+
+        {/* WhatsApp Hover Tooltip */}
+        <div
+          id="whatsapp-shohoj-tooltip"
+          className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 bg-[#128C7E] text-white text-[11px] font-medium rounded-md shadow-lg whitespace-nowrap pointer-events-none transition-all duration-200 transform ${
+            hoveredBadge === 'whatsapp'
+              ? 'opacity-100 translate-y-0 visible'
+              : 'opacity-0 translate-y-1 invisible'
+          }`}
+          role="tooltip"
+        >
+          <span>Chat on WhatsApp</span>
+          {/* Tooltip downward arrow */}
+          <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-[1px] border-4 border-transparent border-t-[#128C7E]" />
+        </div>
+      </a>
+
+      {/* 2. Sabre Logo Badge */}
       <a
         href="https://www.shohojsavre.site/"
         target="_blank"
@@ -91,7 +154,7 @@ export const PartnerBadges: React.FC = () => {
         </div>
       </a>
 
-      {/* 2. Travelport Logo Badge */}
+      {/* 3. Travelport Logo Badge */}
       <a
         href="https://www.shohojaviation.online/"
         target="_blank"
