@@ -32,6 +32,7 @@ export const AIRPORTS: AirportInfo[] = [
   { code: 'CGP', name: 'SHAH AMANAT INTL', city: 'CHITTAGONG', country: 'BANGLADESH', countryCode: 'BD' },
   { code: 'ZYL', name: 'OSMANI INTL', city: 'SYLHET', country: 'BANGLADESH', countryCode: 'BD' },
   { code: 'CXB', name: 'COX\'S BAZAR AIRPORT', city: 'COX\'S BAZAR', country: 'BANGLADESH', countryCode: 'BD' },
+  { code: 'CXE', name: 'COX\'S BAZAR AIRPORT', city: 'COX\'S BAZAR', country: 'BANGLADESH', countryCode: 'BD' },
   { code: 'JSR', name: 'JESSORE AIRPORT', city: 'JESSORE', country: 'BANGLADESH', countryCode: 'BD' },
   { code: 'BZL', name: 'BARISAL AIRPORT', city: 'BARISAL', country: 'BANGLADESH', countryCode: 'BD' },
   { code: 'RJH', name: 'SHAH MAKHDUM AIRPORT', city: 'RAJSHAHI', country: 'BANGLADESH', countryCode: 'BD' },

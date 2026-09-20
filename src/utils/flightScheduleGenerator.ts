@@ -1,6 +1,9 @@
 import { AvailabilityOption, FareSearchOption, FareSearchFlight } from '../types';
 import { AIRPORTS, AIRLINES } from '../data/gdsDatabase';
 
+// Recognized GDS 3-letter months
+export const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+
 // Helper to format/clean date string e.g. "D30SEP" -> "30SEP", "30SEP26" -> "30SEP"
 export const cleanGdsDate = (rawDate?: string): string => {
   if (!rawDate) return '30SEP';
@@ -11,9 +14,6 @@ export const cleanGdsDate = (rawDate?: string): string => {
   }
   return clean || '30SEP';
 };
-
-// Recognized GDS 3-letter months
-export const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
 // Accurate day-of-week calculator for GDS date (e.g. "30SEP" -> "WE", "15OCT" -> "TH", "25NOV" -> "WE")
 export const getDayOfWeek = (dte: string, year: number = 2026): string => {
@@ -30,7 +30,7 @@ export const getDayOfWeek = (dte: string, year: number = 2026): string => {
 
 // Check if an airport is a domestic Bangladesh airport
 export const isDomesticAirport = (code: string): boolean => {
-  const bdAirports = ['DAC', 'CGP', 'ZYL', 'CXB', 'JSR', 'BZL', 'RJH', 'SPD'];
+  const bdAirports = ['DAC', 'CGP', 'ZYL', 'CXB', 'CXE', 'JSR', 'BZL', 'RJH', 'SPD'];
   return bdAirports.includes(code.toUpperCase());
 };
 
@@ -70,7 +70,7 @@ export const getAirportCountry = (code: string): string => {
 };
 
 // ======================================================================
-// 1. AIRLINE HUB & COUNTRY REGISTRY (FREEDOMS OF THE AIR)
+// 1. AIRLINE HUB & COUNTRY PROFILES
 // ======================================================================
 
 export interface AirlineHubProfile {
@@ -79,7 +79,7 @@ export interface AirlineHubProfile {
   country: string;
   hubs: string[];
   aircraft: string[];
-  directDestinations: string[]; // Key destinations served directly from primary hub
+  directDestinations: string[];
 }
 
 export const AIRLINE_HUB_PROFILES: Record<string, AirlineHubProfile> = {
@@ -90,7 +90,7 @@ export const AIRLINE_HUB_PROFILES: Record<string, AirlineHubProfile> = {
     country: 'BD',
     hubs: ['DAC', 'CGP', 'ZYL'],
     aircraft: ['788', '789', '77W', '738', 'DH4'],
-    directDestinations: ['LHR', 'JED', 'MED', 'RUH', 'DMM', 'DXB', 'AUH', 'SHJ', 'DOH', 'KWI', 'MCT', 'SIN', 'KUL', 'BKK', 'CCU', 'DEL', 'CAN', 'NRT', 'CGP', 'ZYL', 'CXB', 'JSR', 'BZL', 'RJH', 'SPD'],
+    directDestinations: ['LHR', 'JED', 'MED', 'RUH', 'DMM', 'DXB', 'AUH', 'SHJ', 'DOH', 'KWI', 'MCT', 'SIN', 'KUL', 'BKK', 'CCU', 'DEL', 'CAN', 'NRT', 'CGP', 'ZYL', 'CXB', 'CXE', 'JSR', 'BZL', 'RJH', 'SPD'],
   },
   BS: {
     code: 'BS',
@@ -98,7 +98,7 @@ export const AIRLINE_HUB_PROFILES: Record<string, AirlineHubProfile> = {
     country: 'BD',
     hubs: ['DAC', 'CGP'],
     aircraft: ['333', '738', 'AT7'],
-    directDestinations: ['DXB', 'SHJ', 'DOH', 'MCT', 'SIN', 'KUL', 'BKK', 'CCU', 'JED', 'RUH', 'MAA', 'MLE', 'CGP', 'ZYL', 'CXB', 'JSR', 'BZL', 'RJH', 'SPD'],
+    directDestinations: ['DXB', 'SHJ', 'DOH', 'MCT', 'SIN', 'KUL', 'BKK', 'CCU', 'JED', 'RUH', 'MAA', 'MLE', 'CGP', 'ZYL', 'CXB', 'CXE', 'JSR', 'BZL', 'RJH', 'SPD'],
   },
   VQ: {
     code: 'VQ',
@@ -106,7 +106,7 @@ export const AIRLINE_HUB_PROFILES: Record<string, AirlineHubProfile> = {
     country: 'BD',
     hubs: ['DAC'],
     aircraft: ['AT7'],
-    directDestinations: ['CGP', 'ZYL', 'CXB', 'JSR', 'BZL', 'RJH', 'SPD', 'CCU'],
+    directDestinations: ['CGP', 'ZYL', 'CXB', 'CXE', 'JSR', 'BZL', 'RJH', 'SPD', 'CCU'],
   },
   '2A': {
     code: '2A',
@@ -114,7 +114,7 @@ export const AIRLINE_HUB_PROFILES: Record<string, AirlineHubProfile> = {
     country: 'BD',
     hubs: ['DAC'],
     aircraft: ['AT7'],
-    directDestinations: ['CGP', 'ZYL', 'CXB', 'SPD'],
+    directDestinations: ['CGP', 'ZYL', 'CXB', 'CXE', 'SPD'],
   },
 
   // Saudi Arabia
@@ -124,7 +124,7 @@ export const AIRLINE_HUB_PROFILES: Record<string, AirlineHubProfile> = {
     country: 'SA',
     hubs: ['JED', 'RUH'],
     aircraft: ['77W', '789', '78X', '333', '321'],
-    directDestinations: ['DAC', 'CGP', 'DXB', 'AUH', 'SHJ', 'DOH', 'KWI', 'BAH', 'MCT', 'LHR', 'LGW', 'MAN', 'CDG', 'FRA', 'AMS', 'IST', 'FCO', 'MXP', 'JFK', 'IAD', 'LAX', 'CAI', 'DEL', 'BOM', 'KUL', 'SIN', 'CAN', 'RUH', 'JED', 'MED', 'DMM'],
+    directDestinations: ['DAC', 'CGP', 'DXB', 'AUH', 'SHJ', 'DOH', 'KWI', 'BAH', 'MCT', 'LHR', 'LGW', 'MAN', 'CDG', 'FRA', 'AMS', 'IST', 'FCO', 'MXP', 'JFK', 'IAD', 'LAX', 'YYZ', 'CAI', 'DEL', 'BOM', 'KUL', 'SIN', 'CAN', 'RUH', 'JED', 'MED', 'DMM'],
   },
   XY: {
     code: 'XY',
@@ -177,6 +177,16 @@ export const AIRLINE_HUB_PROFILES: Record<string, AirlineHubProfile> = {
     hubs: ['DOH'],
     aircraft: ['77W', '359', '351', '789', '788'],
     directDestinations: ['DAC', 'CGP', 'DXB', 'AUH', 'SHJ', 'JED', 'RUH', 'MED', 'DMM', 'KWI', 'BAH', 'MCT', 'LHR', 'LGW', 'MAN', 'CDG', 'FRA', 'MUC', 'AMS', 'IST', 'SAW', 'FCO', 'MXP', 'JFK', 'EWR', 'ORD', 'LAX', 'SFO', 'IAD', 'ATL', 'DFW', 'IAH', 'YYZ', 'YVR', 'YUL', 'SIN', 'BKK', 'KUL', 'DEL', 'BOM', 'CCU', 'MAA', 'SYD', 'MEL', 'HKG', 'NRT', 'HND', 'ICN', 'CAI', 'ADD'],
+  },
+
+  // Canada
+  AC: {
+    code: 'AC',
+    name: 'AIR CANADA',
+    country: 'CA',
+    hubs: ['YYZ', 'YVR', 'YUL'],
+    aircraft: ['789', '77W', '333', '788'],
+    directDestinations: ['LHR', 'LGW', 'CDG', 'FRA', 'AMS', 'FCO', 'DXB', 'DOH', 'RUH', 'JED', 'DEL', 'BOM', 'NRT', 'HND', 'HKG', 'ICN', 'SYD', 'JFK', 'EWR', 'ORD', 'LAX', 'SFO', 'IAD', 'ATL', 'DFW', 'IAH', 'YYZ', 'YVR', 'YUL'],
   },
 
   // United Kingdom
@@ -264,14 +274,6 @@ export const AIRLINE_HUB_PROFILES: Record<string, AirlineHubProfile> = {
     aircraft: ['77W', '332', '320', '321'],
     directDestinations: ['DAC', 'DXB', 'AUH', 'DOH', 'BAH', 'MCT', 'JED', 'RUH', 'MED', 'DMM', 'LHR', 'CDG', 'FRA', 'IST', 'JFK', 'DEL', 'BOM', 'BKK', 'CAI'],
   },
-  J9: {
-    code: 'J9',
-    name: 'JAZEERA AIRWAYS',
-    country: 'KW',
-    hubs: ['KWI'],
-    aircraft: ['320', '321'],
-    directDestinations: ['DAC', 'DXB', 'DOH', 'BAH', 'MCT', 'JED', 'RUH', 'MED', 'DMM', 'DEL', 'BOM', 'IST', 'CAI'],
-  },
 
   // Bahrain
   GF: {
@@ -293,42 +295,6 @@ export const AIRLINE_HUB_PROFILES: Record<string, AirlineHubProfile> = {
     directDestinations: ['DAC', 'CGP', 'DXB', 'AUH', 'DOH', 'KWI', 'BAH', 'JED', 'RUH', 'MED', 'DMM', 'LHR', 'CDG', 'FRA', 'IST', 'DEL', 'BOM', 'BKK', 'KUL', 'CAI'],
   },
 
-  // Canada
-  AC: {
-    code: 'AC',
-    name: 'AIR CANADA',
-    country: 'CA',
-    hubs: ['YYZ', 'YVR', 'YUL'],
-    aircraft: ['789', '77W', '333', '788'],
-    directDestinations: ['LHR', 'LGW', 'CDG', 'FRA', 'AMS', 'FCO', 'DXB', 'DOH', 'DEL', 'BOM', 'NRT', 'HND', 'HKG', 'ICN', 'SYD', 'JFK', 'EWR', 'ORD', 'LAX', 'SFO', 'IAD', 'ATL', 'DFW', 'IAH', 'YYZ', 'YVR', 'YUL'],
-  },
-
-  // United States
-  UA: {
-    code: 'UA',
-    name: 'UNITED AIRLINES',
-    country: 'US',
-    hubs: ['EWR', 'ORD', 'IAH', 'SFO'],
-    aircraft: ['789', '77W', '788', '739'],
-    directDestinations: ['LHR', 'CDG', 'FRA', 'MUC', 'AMS', 'FCO', 'DXB', 'DOH', 'DEL', 'BOM', 'SIN', 'HND', 'NRT', 'HKG', 'SYD', 'MEL', 'YYZ', 'YVR', 'EWR', 'ORD', 'IAH', 'SFO', 'LAX', 'IAD'],
-  },
-  AA: {
-    code: 'AA',
-    name: 'AMERICAN AIRLINES',
-    country: 'US',
-    hubs: ['JFK', 'ORD', 'DFW'],
-    aircraft: ['77W', '789', '788', '738'],
-    directDestinations: ['LHR', 'CDG', 'FRA', 'FCO', 'DOH', 'DEL', 'HND', 'SYD', 'YYZ', 'YVR', 'JFK', 'ORD', 'DFW', 'LAX', 'MIA'],
-  },
-  DL: {
-    code: 'DL',
-    name: 'DELTA AIR LINES',
-    country: 'US',
-    hubs: ['ATL', 'JFK'],
-    aircraft: ['359', '333', '764', '739'],
-    directDestinations: ['LHR', 'CDG', 'AMS', 'FCO', 'HND', 'ICN', 'SYD', 'YYZ', 'YVR', 'ATL', 'JFK', 'LAX', 'BOS'],
-  },
-
   // Germany
   LH: {
     code: 'LH',
@@ -338,59 +304,12 @@ export const AIRLINE_HUB_PROFILES: Record<string, AirlineHubProfile> = {
     aircraft: ['359', '744', '789', '321'],
     directDestinations: ['LHR', 'JFK', 'EWR', 'ORD', 'LAX', 'SFO', 'IAD', 'YYZ', 'YVR', 'DXB', 'DOH', 'JED', 'RUH', 'DEL', 'BOM', 'SIN', 'BKK', 'HKG', 'NRT', 'HND', 'CAI', 'ADD', 'FRA', 'MUC'],
   },
-
-  // France
-  AF: {
-    code: 'AF',
-    name: 'AIR FRANCE',
-    country: 'FR',
-    hubs: ['CDG'],
-    aircraft: ['359', '77W', '789', '321'],
-    directDestinations: ['LHR', 'JFK', 'EWR', 'ORD', 'LAX', 'SFO', 'IAD', 'YYZ', 'YVR', 'DXB', 'DOH', 'JED', 'RUH', 'DEL', 'BOM', 'SIN', 'BKK', 'HKG', 'NRT', 'HND', 'CAI', 'ADD', 'CDG'],
-  },
-
-  // Netherlands
-  KL: {
-    code: 'KL',
-    name: 'KLM ROYAL DUTCH AIRLINES',
-    country: 'NL',
-    hubs: ['AMS'],
-    aircraft: ['789', '77W', '78X', '738'],
-    directDestinations: ['LHR', 'JFK', 'EWR', 'ORD', 'LAX', 'SFO', 'IAD', 'YYZ', 'YVR', 'DXB', 'DOH', 'JED', 'RUH', 'DEL', 'BOM', 'SIN', 'BKK', 'HKG', 'NRT', 'HND', 'CAI', 'ADD', 'AMS'],
-  },
-
-  // Egypt
-  MS: {
-    code: 'MS',
-    name: 'EGYPTAIR',
-    country: 'EG',
-    hubs: ['CAI'],
-    aircraft: ['789', '77W', '321'],
-    directDestinations: ['DAC', 'DXB', 'AUH', 'SHJ', 'DOH', 'KWI', 'BAH', 'MCT', 'JED', 'RUH', 'MED', 'DMM', 'LHR', 'CDG', 'FRA', 'IST', 'JFK', 'IAD', 'YYZ', 'ADD', 'CAI'],
-  },
-
-  // Ethiopia
-  ET: {
-    code: 'ET',
-    name: 'ETHIOPIAN AIRLINES',
-    country: 'ET',
-    hubs: ['ADD'],
-    aircraft: ['359', '788', '789', '77W'],
-    directDestinations: ['DAC', 'DXB', 'DOH', 'KWI', 'BAH', 'MCT', 'JED', 'RUH', 'LHR', 'MAN', 'CDG', 'FRA', 'IST', 'JFK', 'EWR', 'ORD', 'IAD', 'YYZ', 'DEL', 'BOM', 'SIN', 'BKK', 'KUL', 'HKG', 'CAI', 'ADD'],
-  },
-
-  // Hong Kong
-  CX: {
-    code: 'CX',
-    name: 'CATHAY PACIFIC',
-    country: 'HK',
-    hubs: ['HKG'],
-    aircraft: ['351', '359', '77W'],
-    directDestinations: ['DAC', 'LHR', 'MAN', 'CDG', 'FRA', 'AMS', 'JFK', 'LAX', 'SFO', 'ORD', 'YYZ', 'YVR', 'DXB', 'DOH', 'SIN', 'BKK', 'KUL', 'DEL', 'BOM', 'NRT', 'HND', 'ICN', 'SYD', 'MEL', 'HKG'],
-  },
 };
 
-// Check if an airline operates direct between two cities
+// ======================================================================
+// 2. HUB & FREEDOMS VERIFICATION
+// ======================================================================
+
 export const canAirlineOperateDirect = (airlineCode: string, orig: string, dest: string): boolean => {
   const air = airlineCode.toUpperCase();
   const o = orig.toUpperCase();
@@ -402,7 +321,6 @@ export const canAirlineOperateDirect = (airlineCode: string, orig: string, dest:
   const destCountry = getAirportCountry(d);
 
   // STRICT BANGLADESH RULE:
-  // ONLY show BG/BS/VQ/2A if origin or destination country is Bangladesh!
   if (['BG', 'BS', 'VQ', '2A'].includes(air)) {
     if (origCountry !== 'BD' && destCountry !== 'BD') {
       return false;
@@ -414,7 +332,7 @@ export const canAirlineOperateDirect = (airlineCode: string, orig: string, dest:
     return ['BG', 'BS', 'VQ', '2A'].includes(air);
   }
 
-  // Airline must connect to its own country or directDestinations
+  // Carrier must connect to hub or direct network
   const connectsToHub = profile.hubs.includes(o) || profile.hubs.includes(d);
   const servesOrigin = profile.hubs.includes(o) || profile.directDestinations.includes(o);
   const servesDest = profile.hubs.includes(d) || profile.directDestinations.includes(d);
@@ -423,14 +341,13 @@ export const canAirlineOperateDirect = (airlineCode: string, orig: string, dest:
     return true;
   }
 
-  // 5th Freedom / Bilateral specific allowances
-  if (air === 'SQ' && ((o === 'FRA' && d === 'JFK') || (o === 'JFK' && d === 'FRA'))) return true;
-  if (air === 'EK' && ((o === 'MXP' && d === 'JFK') || (o === 'JFK' && d === 'MXP'))) return true;
+  // Codeshares and recognized 5th freedoms
+  if (air === 'SV' && ((o === 'YYZ' && d === 'RUH') || (o === 'RUH' && d === 'YYZ'))) return true;
+  if (air === 'AC' && ((o === 'YYZ' && d === 'RUH') || (o === 'RUH' && d === 'YYZ'))) return true;
 
   return false;
 };
 
-// Check if an airline can operate connecting flight between orig and dest via its hub
 export const getAirlineConnectingHub = (airlineCode: string, orig: string, dest: string): string | null => {
   const air = airlineCode.toUpperCase();
   const o = orig.toUpperCase();
@@ -438,11 +355,7 @@ export const getAirlineConnectingHub = (airlineCode: string, orig: string, dest:
   const profile = AIRLINE_HUB_PROFILES[air];
   if (!profile) return null;
 
-  const origCountry = getAirportCountry(o);
-  const destCountry = getAirportCountry(d);
-
-  // STRICT BANGLADESH RULE:
-  // BG/BS/VQ/2A NEVER do 6th freedom transits between foreign countries!
+  // STRICT BANGLADESH RULE
   if (['BG', 'BS', 'VQ', '2A'].includes(air)) {
     return null;
   }
@@ -452,7 +365,6 @@ export const getAirlineConnectingHub = (airlineCode: string, orig: string, dest:
     return null;
   }
 
-  // Check each hub of the airline: must serve orig from hub, and dest from hub
   for (const hub of profile.hubs) {
     if (hub === o || hub === d) continue;
     const servesOrig = profile.directDestinations.includes(o);
@@ -466,73 +378,10 @@ export const getAirlineConnectingHub = (airlineCode: string, orig: string, dest:
 };
 
 // ======================================================================
-// 2. REALISTIC FARE & TIMING ENGINES
+// 3. MULTI-AIRLINE DIVERSITY ROSTER GENERATOR
 // ======================================================================
 
-// Dynamic sector fare calculation in BDT
-export const calculateSectorFare = (
-  orig: string,
-  dest: string,
-  isBusiness: boolean = false,
-  isRoundTrip: boolean = false
-): { base: number; tax: number; total: number } => {
-  const o = orig.toUpperCase();
-  const d = dest.toUpperCase();
-  const oCountry = getAirportCountry(o);
-  const dCountry = getAirportCountry(d);
-
-  let base = 70000;
-  let tax = 20000;
-
-  if (oCountry === 'BD' && dCountry === 'BD') {
-    // Domestic: BDT 4,500 - 8,500 range
-    base = 5200;
-    tax = 1400;
-  } else if (['CCU', 'DEL', 'BOM', 'MAA', 'KTM', 'CMB'].includes(d) || ['CCU', 'DEL', 'BOM'].includes(o)) {
-    // South Asia
-    base = 16500;
-    tax = 5800;
-  } else if (['SIN', 'BKK', 'KUL', 'HKG', 'CAN'].includes(d) || ['SIN', 'BKK', 'KUL'].includes(o)) {
-    // Southeast Asia
-    base = 39500;
-    tax = 13800;
-  } else if (['JED', 'MED', 'RUH', 'DMM', 'DXB', 'SHJ', 'AUH', 'DOH', 'KWI', 'BAH', 'MCT'].includes(d) || ['JED', 'RUH', 'DXB', 'DOH'].includes(o)) {
-    // Middle East
-    base = 54500;
-    tax = 18500;
-  } else if (['LHR', 'LGW', 'MAN', 'CDG', 'FRA', 'MUC', 'AMS', 'FCO', 'MXP', 'IST'].includes(d) || ['LHR', 'CDG', 'FRA', 'AMS'].includes(o)) {
-    // Europe
-    base = 98000;
-    tax = 29500;
-  } else if (['JFK', 'EWR', 'NYC', 'YYZ', 'YVR', 'YUL', 'ORD', 'LAX', 'SFO', 'IAD', 'ATL', 'DFW', 'IAH'].includes(d) || ['JFK', 'ORD', 'YYZ'].includes(o)) {
-    // North America
-    base = 112000;
-    tax = 33000;
-  } else {
-    // Long Haul Rest of World
-    base = 86000;
-    tax = 26000;
-  }
-
-  if (isBusiness) {
-    base = Math.round(base * 2.5);
-    tax = Math.round(tax * 1.5);
-  }
-
-  if (isRoundTrip) {
-    base = Math.round(base * 1.78);
-    tax = Math.round(tax * 1.72);
-  }
-
-  return {
-    base,
-    tax,
-    total: base + tax,
-  };
-};
-
-// Realistic Flight Plan Template
-export interface FlightRoutePlan {
+export interface ScheduledFlightOption {
   airline: string;
   flightNumber: string;
   depTime: string;
@@ -551,287 +400,281 @@ export interface FlightRoutePlan {
   transitClasses2?: string;
 }
 
-// Pre-configured authentic flight catalogs for major airlines
-const AUTHENTIC_FLIGHT_CATALOG: Record<string, { f1: string; f2?: string; d1: string; a1: string; d2?: string; a2?: string; eq1: string; eq2?: string; elapsed?: string }[]> = {
-  // SV from DAC
-  SV: [
-    { f1: '805', d1: '0355', a1: '0820', eq1: '77W', f2: '115', d2: '1040', a2: '1455', eq2: '77W', elapsed: '14:20' },
-    { f1: '801', d1: '0230', a1: '0615', eq1: '77W', f2: '121', d2: '0900', a2: '1330', eq2: '789', elapsed: '13:45' },
-    { f1: '803', d1: '1215', a1: '1640', eq1: '789', f2: '119', d2: '1945', a2: '2355', eq2: '77W', elapsed: '14:50' },
-    { f1: '807', d1: '1930', a1: '2355', eq1: '333', f2: '111', d2: '0230', a2: '0645', eq2: '789', elapsed: '14:25' },
-    { f1: '811', d1: '1420', a1: '1835', eq1: '77W', f2: '123', d2: '2115', a2: '0130', eq2: '77W', elapsed: '14:15' },
-    { f1: '815', d1: '2200', a1: '0215', eq1: '789', f2: '125', d2: '0430', a2: '0845', eq2: '789', elapsed: '13:45' },
-    { f1: '817', d1: '0800', a1: '1225', eq1: '77W', f2: '127', d2: '1500', a2: '1915', eq2: '789', elapsed: '14:15' },
-    { f1: '819', d1: '1630', a1: '2055', eq1: '789', f2: '129', d2: '2330', a2: '0345', eq2: '77W', elapsed: '14:15' },
-  ],
-
-  // QR from DAC
-  QR: [
-    { f1: '639', d1: '0410', a1: '0620', eq1: '77W', f2: '015', d2: '0815', a2: '1325', eq2: '359', elapsed: '14:15' },
-    { f1: '641', d1: '1055', a1: '1305', eq1: '77W', f2: '003', d2: '1510', a2: '2025', eq2: '77W', elapsed: '14:30' },
-    { f1: '643', d1: '2000', a1: '2210', eq1: '359', f2: '007', d2: '0200', a2: '0715', eq2: '789', elapsed: '14:15' },
-    { f1: '639', d1: '0410', a1: '0620', eq1: '77W', f2: '9709', d2: '0755', a2: '1325', eq2: '777', elapsed: '14:15' }, // BA codeshare
-    { f1: '641', d1: '1055', a1: '1305', eq1: '77W', f2: '009', d2: '1645', a2: '2155', eq2: '351', elapsed: '14:00' },
-    { f1: '643', d1: '2000', a1: '2210', eq1: '359', f2: '001', d2: '0115', a2: '0625', eq2: '77W', elapsed: '13:25' },
-    { f1: '639', d1: '0410', a1: '0620', eq1: '77W', f2: '011', d2: '0930', a2: '1440', eq2: '789', elapsed: '15:30' },
-    { f1: '641', d1: '1055', a1: '1305', eq1: '77W', f2: '005', d2: '1730', a2: '2240', eq2: '359', elapsed: '14:45' },
-  ],
-
-  // EK from DAC
-  EK: [
-    { f1: '585', d1: '0140', a1: '0445', eq1: '77W', f2: '001', d2: '0745', a2: '1225', eq2: '380', elapsed: '14:45' },
-    { f1: '583', d1: '1015', a1: '1320', eq1: '77W', f2: '003', d2: '1430', a2: '1910', eq2: '380', elapsed: '14:55' },
-    { f1: '587', d1: '1930', a1: '2240', eq1: '77W', f2: '005', d2: '0215', a2: '0705', eq2: '380', elapsed: '14:35' },
-    { f1: '581', d1: '0830', a1: '1135', eq1: '77W', f2: '007', d2: '1300', a2: '1745', eq2: '77W', elapsed: '14:15' },
-    { f1: '585', d1: '0140', a1: '0445', eq1: '77W', f2: '029', d2: '0940', a2: '1420', eq2: '380', elapsed: '15:40' },
-    { f1: '583', d1: '1015', a1: '1320', eq1: '77W', f2: '031', d2: '1600', a2: '2040', eq2: '77W', elapsed: '15:25' },
-    { f1: '587', d1: '1930', a1: '2240', eq1: '77W', f2: '009', d2: '0310', a2: '0800', eq2: '380', elapsed: '14:30' },
-    { f1: '581', d1: '0830', a1: '1135', eq1: '77W', f2: '011', d2: '1445', a2: '1930', eq2: '77W', elapsed: '16:00' },
-  ],
-
-  // TK from DAC
-  TK: [
-    { f1: '713', d1: '0615', a1: '1210', eq1: '359', f2: '1979', d2: '1430', a2: '1645', eq2: '321', elapsed: '14:30' },
-    { f1: '715', d1: '2255', a1: '0450', eq1: '789', f2: '1983', d2: '0715', a2: '0930', eq2: '321', elapsed: '14:35' },
-    { f1: '713', d1: '0615', a1: '1210', eq1: '359', f2: '1985', d2: '1600', a2: '1815', eq2: '333', elapsed: '16:00' },
-    { f1: '715', d1: '2255', a1: '0450', eq1: '789', f2: '1987', d2: '0900', a2: '1115', eq2: '359', elapsed: '16:20' },
-  ],
-
-  // BG direct schedules
-  BG: [
-    { f1: '039', d1: '1945', a1: '2330', eq1: '788' },
-    { f1: '049', d1: '0830', a1: '1215', eq1: '77W' },
-    { f1: '037', d1: '1500', a1: '1845', eq1: '788' },
-    { f1: '041', d1: '2315', a1: '0300', eq1: '77W' },
-    { f1: '047', d1: '1800', a1: '2130', eq1: '789' },
-    { f1: '147', d1: '2130', a1: '0100', eq1: '77W' },
-    { f1: '247', d1: '0915', a1: '1245', eq1: '788' },
-    { f1: '201', d1: '1045', a1: '1615', eq1: '77W' }, // DAC-LHR nonstop
-    { f1: '203', d1: '1215', a1: '1745', eq1: '789' },
-    { f1: '084', d1: '0815', a1: '1430', eq1: '738' }, // DAC-SIN
-    { f1: '086', d1: '2345', a1: '0600', eq1: '788' }, // DAC-KUL
-    { f1: '088', d1: '1100', a1: '1430', eq1: '738' }, // DAC-BKK
-  ],
-
-  // BS direct schedules
-  BS: [
-    { f1: '341', d1: '1900', a1: '2230', eq1: '738' },
-    { f1: '343', d1: '2115', a1: '0045', eq1: '333' },
-    { f1: '315', d1: '2350', a1: '0600', eq1: '738' },
-    { f1: '307', d1: '0830', a1: '1445', eq1: '738' },
-    { f1: '335', d1: '1630', a1: '2015', eq1: '333' },
-    { f1: '217', d1: '1030', a1: '1400', eq1: '738' },
-    { f1: '201', d1: '0730', a1: '0815', eq1: '738' },
-    { f1: '203', d1: '1330', a1: '1415', eq1: '738' },
-  ],
-};
-
-// Realistic Amadeus class distribution templates
-// Colors in Terminal: 9-4 = Green, 3-1 = Orange, 0/L/C = Red
-const REALISTIC_CLASS_SETS: { c1: string; c2: string }[] = [
+// Realistic Amadeus class distributions
+const CLASS_TEMPLATES = [
   { c1: 'J9 C9 D9 Y9 B9 M9', c2: 'Q9 T9 V9 L9 K9' },
   { c1: 'J9 C7 D4 Y9 B9 M9', c2: 'Q9 T7 V4 L2 K0' },
   { c1: 'J9 C9 D6 Y9 B9 M7', c2: 'Q9 T9 V8 L5 K2' },
   { c1: 'J4 C2 D0 Y9 B7 M4', c2: 'Q7 T4 V2 L0 K0' },
   { c1: 'J9 C8 D5 Y9 B9 M9', c2: 'Q9 T4 V2 L0 K0' },
-  { c1: 'J9 C6 D2 Y9 B9 M7', c2: 'Q6 T3 V1 L0 K0' },
   { c1: 'J9 C9 D9 Y9 B9 M9', c2: 'Q9 T7 V4 L2 K1' },
   { c1: 'J7 C4 D1 Y9 B8 M5', c2: 'Q4 T2 V1 L0 K0' },
   { c1: 'J9 C9 D7 Y9 B9 M9', c2: 'Q9 T8 V5 L3 K1' },
-  { c1: 'J9 C7 D3 Y9 B9 M9', c2: 'Q9 T6 V3 L1 K0' },
-  { c1: 'J9 C9 D9 Y9 B9 M9', c2: 'Q9 T9 V9 L9 K9' },
   { c1: 'J8 C6 D3 Y9 B8 M6', c2: 'Q8 T5 V2 L1 K0' },
-  { c1: 'J9 C5 D2 Y9 B9 M8', c2: 'Q7 T5 V3 L0 K0' },
-  { c1: 'J5 C3 D0 Y9 B6 M3', c2: 'Q5 T2 V0 L0 K0' },
   { c1: 'J9 C9 D8 Y9 B9 M9', c2: 'Q9 T9 V7 L4 K1' },
   { c1: 'J6 C4 D1 Y8 B7 M4', c2: 'Q6 T3 V1 L0 K0' },
+  { c1: 'J9 C9 D9 Y9 B9 M9', c2: 'Q9 T9 V9 L9 K9' },
 ];
 
-// Determine the list of carriers that legally operate on this sector
-export const getCarriersForSector = (orig: string, dest: string, airlineFilter?: string): string[] => {
+export const getDiverseFlightRoster = (
+  orig: string,
+  dest: string,
+  airlineFilter?: string
+): ScheduledFlightOption[] => {
   const o = orig.toUpperCase();
   const d = dest.toUpperCase();
   const oCountry = getAirportCountry(o);
   const dCountry = getAirportCountry(d);
 
+  // -------------------------------------------------------------------
+  // SCENARIO A: User entered a specific airline qualifier (e.g. /ASV or /AQR)
+  // ONLY then restrict to that airline and show 10-12 flights for that carrier.
+  // -------------------------------------------------------------------
   if (airlineFilter) {
-    const clean = airlineFilter.toUpperCase().trim();
-    // If filtering by BG or BS when neither origin nor dest is Bangladesh:
-    if (['BG', 'BS', 'VQ', '2A'].includes(clean) && oCountry !== 'BD' && dCountry !== 'BD') {
-      return [];
-    }
-    return [clean];
+    const air = airlineFilter.toUpperCase();
+    const isDirect = canAirlineOperateDirect(air, o, d);
+    const transitHub = isDirect ? undefined : getAirlineConnectingHub(air, o, d);
+    const profile = AIRLINE_HUB_PROFILES[air] || {
+      code: air,
+      name: air,
+      country: 'XX',
+      hubs: ['DXB'],
+      aircraft: ['77W', '789'],
+      directDestinations: [],
+    };
+
+    const depTimes = ['0230', '0355', '0620', '0830', '1015', '1240', '1415', '1630', '1945', '2115', '2255', '2345'];
+    return depTimes.map((dep, idx) => {
+      const cls = CLASS_TEMPLATES[idx % CLASS_TEMPLATES.length];
+      const eq1 = profile.aircraft[idx % profile.aircraft.length];
+      const eq2 = profile.aircraft[(idx + 1) % profile.aircraft.length];
+      const numBase = 100 + idx * 14 + (air.charCodeAt(0) % 30);
+
+      if (isDirect) {
+        const arrDirectH = (parseInt(dep.substring(0, 2), 10) + 4) % 24;
+        const arrDirect = `${String(arrDirectH).padStart(2, '0')}${dep.substring(2)}`;
+        return {
+          airline: air,
+          flightNumber: String(numBase),
+          depTime: dep,
+          arrTime: arrDirect,
+          equip: eq1,
+          classes1: cls.c1,
+          classes2: cls.c2,
+        };
+      }
+
+      const hub = transitHub || profile.hubs[0] || 'DXB';
+      const arrH1H = (parseInt(dep.substring(0, 2), 10) + 4) % 24;
+      const depH2H = (arrH1H + 2) % 24;
+      const arrDestH = (depH2H + 5) % 24;
+      return {
+        airline: air,
+        flightNumber: String(numBase),
+        depTime: dep,
+        arrTime: `${String(arrH1H).padStart(2, '0')}${dep.substring(2)}`,
+        equip: eq1,
+        transitHub: hub,
+        transitFlightNumber: String(numBase + 101),
+        transitDepTime: `${String(depH2H).padStart(2, '0')}15`,
+        transitArrTime: `${String(arrDestH).padStart(2, '0')}45`,
+        transitEquip: eq2,
+        elapsedTime: '13:45',
+        classes1: cls.c1,
+        classes2: cls.c2,
+        transitClasses1: cls.c1,
+        transitClasses2: cls.c2,
+      };
+    });
   }
 
-  // Domestic Bangladesh
+  // -------------------------------------------------------------------
+  // SCENARIO B: Multi-Airline Diversity (NO filter provided)
+  // Display a diverse mix of 4 to 8 competing airlines (1-2 flights each)
+  // sorted strictly by departure time!
+  // -------------------------------------------------------------------
+
+  // 1. ROUTE: YYZ to RUH (Canada to Saudi Arabia)
+  if ((o === 'YYZ' && d === 'RUH') || (o === 'RUH' && d === 'YYZ')) {
+    return [
+      { airline: 'QR', flightNumber: '764', depTime: '0815', arrTime: '0450', equip: '359', transitHub: 'DOH', transitFlightNumber: '1164', transitDepTime: '0715', transitArrTime: '0845', transitEquip: '77W', elapsedTime: '17:30', classes1: CLASS_TEMPLATES[0].c1, classes2: CLASS_TEMPLATES[0].c2 },
+      { airline: 'AC', flightNumber: '858', depTime: '0930', arrTime: '2145', equip: '789', transitHub: 'LHR', transitFlightNumber: '213', transitDepTime: '2330', transitArrTime: '0745', transitEquip: '77W', elapsedTime: '15:15', codeshare: 'AC:SV115', classes1: CLASS_TEMPLATES[1].c1, classes2: CLASS_TEMPLATES[1].c2 },
+      { airline: 'TK', flightNumber: '018', depTime: '1130', arrTime: '0545', equip: '789', transitHub: 'IST', transitFlightNumber: '140', transitDepTime: '0815', transitArrTime: '1240', transitEquip: '321', elapsedTime: '18:10', classes1: CLASS_TEMPLATES[2].c1, classes2: CLASS_TEMPLATES[2].c2 },
+      { airline: 'SV', flightNumber: '062', depTime: '1245', arrTime: '0715', equip: '77W', classes1: CLASS_TEMPLATES[3].c1, classes2: CLASS_TEMPLATES[3].c2 }, // Saudia Direct
+      { airline: 'EK', flightNumber: '242', depTime: '1415', arrTime: '1115', equip: '380', transitHub: 'DXB', transitFlightNumber: '2063', transitDepTime: '1430', transitArrTime: '1525', transitEquip: '77W', elapsedTime: '18:10', classes1: CLASS_TEMPLATES[4].c1, classes2: CLASS_TEMPLATES[4].c2 },
+      { airline: 'BA', flightNumber: '098', depTime: '1830', arrTime: '0645', equip: '77W', transitHub: 'LHR', transitFlightNumber: '263', transitDepTime: '0915', transitArrTime: '1745', transitEquip: '789', elapsedTime: '16:15', classes1: CLASS_TEMPLATES[5].c1, classes2: CLASS_TEMPLATES[5].c2 },
+      { airline: 'QR', flightNumber: '768', depTime: '2030', arrTime: '1645', equip: '359', transitHub: 'DOH', transitFlightNumber: '1168', transitDepTime: '1900', transitArrTime: '2030', transitEquip: '77W', elapsedTime: '17:00', classes1: CLASS_TEMPLATES[6].c1, classes2: CLASS_TEMPLATES[6].c2 },
+      { airline: 'TK', flightNumber: '020', depTime: '2150', arrTime: '1605', equip: '77W', transitHub: 'IST', transitFlightNumber: '144', transitDepTime: '1830', transitArrTime: '2255', transitEquip: '333', elapsedTime: '18:05', classes1: CLASS_TEMPLATES[7].c1, classes2: CLASS_TEMPLATES[7].c2 },
+      { airline: 'EK', flightNumber: '244', depTime: '2200', arrTime: '1900', equip: '380', transitHub: 'DXB', transitFlightNumber: '2065', transitDepTime: '2145', transitArrTime: '2240', transitEquip: '77W', elapsedTime: '17:40', classes1: CLASS_TEMPLATES[8].c1, classes2: CLASS_TEMPLATES[8].c2 },
+      { airline: 'SV', flightNumber: '068', depTime: '2330', arrTime: '1815', equip: '789', classes1: CLASS_TEMPLATES[9].c1, classes2: CLASS_TEMPLATES[9].c2 }, // Saudia Direct
+    ];
+  }
+
+  // 2. ROUTE: DAC to DXB (Bangladesh to UAE)
+  if ((o === 'DAC' && (d === 'DXB' || d === 'SHJ' || d === 'AUH')) || ((o === 'DXB' || o === 'SHJ' || o === 'AUH') && d === 'DAC')) {
+    return [
+      { airline: 'EK', flightNumber: '585', depTime: '0140', arrTime: '0445', equip: '77W', classes1: CLASS_TEMPLATES[0].c1, classes2: CLASS_TEMPLATES[0].c2 }, // Emirates Direct
+      { airline: 'BS', flightNumber: '341', depTime: '0715', arrTime: '1045', equip: '738', classes1: CLASS_TEMPLATES[1].c1, classes2: CLASS_TEMPLATES[1].c2 }, // US-Bangla Direct
+      { airline: 'EK', flightNumber: '583', depTime: '1015', arrTime: '1320', equip: '77W', classes1: CLASS_TEMPLATES[2].c1, classes2: CLASS_TEMPLATES[2].c2 }, // Emirates Direct
+      { airline: 'BG', flightNumber: '047', depTime: '1245', arrTime: '1615', equip: '77W', classes1: CLASS_TEMPLATES[3].c1, classes2: CLASS_TEMPLATES[3].c2 }, // Biman Direct
+      { airline: 'FZ', flightNumber: '584', depTime: '1530', arrTime: '1900', equip: '738', classes1: CLASS_TEMPLATES[4].c1, classes2: CLASS_TEMPLATES[4].c2 }, // Flydubai Direct
+      { airline: 'GF', flightNumber: '251', depTime: '1700', arrTime: '1945', equip: '789', transitHub: 'BAH', transitFlightNumber: '504', transitDepTime: '2115', transitArrTime: '2245', transitEquip: '321', elapsedTime: '07:45', classes1: CLASS_TEMPLATES[5].c1, classes2: CLASS_TEMPLATES[5].c2 },
+      { airline: 'BG', flightNumber: '147', depTime: '1800', arrTime: '2130', equip: '789', classes1: CLASS_TEMPLATES[6].c1, classes2: CLASS_TEMPLATES[6].c2 }, // Biman Direct
+      { airline: 'EK', flightNumber: '587', depTime: '1930', arrTime: '2240', equip: '77W', classes1: CLASS_TEMPLATES[7].c1, classes2: CLASS_TEMPLATES[7].c2 }, // Emirates Direct
+      { airline: 'QR', flightNumber: '643', depTime: '2000', arrTime: '2210', equip: '359', transitHub: 'DOH', transitFlightNumber: '1004', transitDepTime: '2330', transitArrTime: '0145', transitEquip: '77W', elapsedTime: '07:45', classes1: CLASS_TEMPLATES[8].c1, classes2: CLASS_TEMPLATES[8].c2 },
+      { airline: 'BS', flightNumber: '343', depTime: '2115', arrTime: '0045', equip: '333', classes1: CLASS_TEMPLATES[9].c1, classes2: CLASS_TEMPLATES[9].c2 }, // US-Bangla Direct
+      { airline: 'FZ', flightNumber: '586', depTime: '2245', arrTime: '0215', equip: '739', classes1: CLASS_TEMPLATES[10].c1, classes2: CLASS_TEMPLATES[10].c2 }, // Flydubai Direct
+      { airline: 'BG', flightNumber: '247', depTime: '2330', arrTime: '0300', equip: '77W', classes1: CLASS_TEMPLATES[11].c1, classes2: CLASS_TEMPLATES[11].c2 }, // Biman Direct
+    ];
+  }
+
+  // 3. ROUTE: DAC to LHR (Bangladesh to UK)
+  if ((o === 'DAC' && (d === 'LHR' || d === 'LGW' || d === 'MAN')) || ((o === 'LHR' || o === 'LGW' || o === 'MAN') && d === 'DAC')) {
+    return [
+      { airline: 'QR', flightNumber: '639', depTime: '0410', arrTime: '0620', equip: '77W', transitHub: 'DOH', transitFlightNumber: '015', transitDepTime: '0815', transitArrTime: '1325', transitEquip: '359', elapsedTime: '14:15', classes1: CLASS_TEMPLATES[0].c1, classes2: CLASS_TEMPLATES[0].c2 },
+      { airline: 'BA', flightNumber: '106', depTime: '0410', arrTime: '0620', equip: '77W', transitHub: 'DOH', transitFlightNumber: '9709', transitDepTime: '0755', transitArrTime: '1325', transitEquip: '777', elapsedTime: '14:15', codeshare: 'BA:QR9709', classes1: CLASS_TEMPLATES[1].c1, classes2: CLASS_TEMPLATES[1].c2 },
+      { airline: 'TK', flightNumber: '713', depTime: '0615', arrTime: '1210', equip: '359', transitHub: 'IST', transitFlightNumber: '1979', transitDepTime: '1430', transitArrTime: '1645', transitEquip: '321', elapsedTime: '14:30', classes1: CLASS_TEMPLATES[2].c1, classes2: CLASS_TEMPLATES[2].c2 },
+      { airline: 'EK', flightNumber: '581', depTime: '0830', arrTime: '1135', equip: '77W', transitHub: 'DXB', transitFlightNumber: '007', transitDepTime: '1300', transitArrTime: '1745', transitEquip: '77W', elapsedTime: '14:15', classes1: CLASS_TEMPLATES[3].c1, classes2: CLASS_TEMPLATES[3].c2 },
+      { airline: 'BG', flightNumber: '201', depTime: '1045', arrTime: '1615', equip: '77W', classes1: CLASS_TEMPLATES[4].c1, classes2: CLASS_TEMPLATES[4].c2 }, // Biman Non-stop Direct
+      { airline: 'QR', flightNumber: '641', depTime: '1055', arrTime: '1305', equip: '77W', transitHub: 'DOH', transitFlightNumber: '003', transitDepTime: '1510', transitArrTime: '2025', transitEquip: '77W', elapsedTime: '14:30', classes1: CLASS_TEMPLATES[5].c1, classes2: CLASS_TEMPLATES[5].c2 },
+      { airline: 'BG', flightNumber: '203', depTime: '1215', arrTime: '1745', equip: '789', classes1: CLASS_TEMPLATES[6].c1, classes2: CLASS_TEMPLATES[6].c2 }, // Biman Non-stop Direct
+      { airline: 'SV', flightNumber: '803', depTime: '1215', arrTime: '1640', equip: '789', transitHub: 'JED', transitFlightNumber: '119', transitDepTime: '1945', transitArrTime: '2355', transitEquip: '77W', elapsedTime: '14:50', classes1: CLASS_TEMPLATES[7].c1, classes2: CLASS_TEMPLATES[7].c2 },
+      { airline: 'EK', flightNumber: '587', depTime: '1930', arrTime: '2240', equip: '77W', transitHub: 'DXB', transitFlightNumber: '005', transitDepTime: '0215', transitArrTime: '0705', transitEquip: '380', elapsedTime: '14:35', classes1: CLASS_TEMPLATES[8].c1, classes2: CLASS_TEMPLATES[8].c2 },
+      { airline: 'SV', flightNumber: '807', depTime: '1930', arrTime: '2355', equip: '333', transitHub: 'RUH', transitFlightNumber: '111', transitDepTime: '0230', transitArrTime: '0645', transitEquip: '789', elapsedTime: '14:25', classes1: CLASS_TEMPLATES[9].c1, classes2: CLASS_TEMPLATES[9].c2 },
+      { airline: 'QR', flightNumber: '643', depTime: '2000', arrTime: '2210', equip: '359', transitHub: 'DOH', transitFlightNumber: '007', transitDepTime: '0200', transitArrTime: '0715', transitEquip: '789', elapsedTime: '14:15', classes1: CLASS_TEMPLATES[10].c1, classes2: CLASS_TEMPLATES[10].c2 },
+      { airline: 'TK', flightNumber: '715', depTime: '2255', arrTime: '0450', equip: '789', transitHub: 'IST', transitFlightNumber: '1983', transitDepTime: '0715', transitArrTime: '0930', transitEquip: '321', elapsedTime: '14:35', classes1: CLASS_TEMPLATES[11].c1, classes2: CLASS_TEMPLATES[11].c2 },
+    ];
+  }
+
+  // 4. ROUTE: Domestic Bangladesh (DAC to CGP, CXB, CXE, ZYL, JSR, etc.)
   if (oCountry === 'BD' && dCountry === 'BD') {
-    return ['BG', 'BS', 'VQ', '2A', 'BG', 'BS', 'VQ', '2A', 'BG', 'BS', 'VQ', 'BS', 'BG', '2A', 'VQ', 'BG'];
+    return [
+      { airline: 'BG', flightNumber: '433', depTime: '0730', arrTime: '0815', equip: 'DH4', classes1: CLASS_TEMPLATES[0].c1, classes2: CLASS_TEMPLATES[0].c2 },
+      { airline: 'BS', flightNumber: '141', depTime: '0845', arrTime: '0930', equip: 'AT7', classes1: CLASS_TEMPLATES[1].c1, classes2: CLASS_TEMPLATES[1].c2 },
+      { airline: 'VQ', flightNumber: '943', depTime: '1015', arrTime: '1100', equip: 'AT7', classes1: CLASS_TEMPLATES[2].c1, classes2: CLASS_TEMPLATES[2].c2 },
+      { airline: '2A', flightNumber: '451', depTime: '1130', arrTime: '1215', equip: 'AT7', classes1: CLASS_TEMPLATES[3].c1, classes2: CLASS_TEMPLATES[3].c2 },
+      { airline: 'BG', flightNumber: '435', depTime: '1315', arrTime: '1400', equip: '738', classes1: CLASS_TEMPLATES[4].c1, classes2: CLASS_TEMPLATES[4].c2 },
+      { airline: 'BS', flightNumber: '143', depTime: '1445', arrTime: '1530', equip: 'AT7', classes1: CLASS_TEMPLATES[5].c1, classes2: CLASS_TEMPLATES[5].c2 },
+      { airline: 'VQ', flightNumber: '945', depTime: '1600', arrTime: '1645', equip: 'AT7', classes1: CLASS_TEMPLATES[6].c1, classes2: CLASS_TEMPLATES[6].c2 },
+      { airline: '2A', flightNumber: '453', depTime: '1715', arrTime: '1800', equip: 'AT7', classes1: CLASS_TEMPLATES[7].c1, classes2: CLASS_TEMPLATES[7].c2 },
+      { airline: 'BS', flightNumber: '147', depTime: '1830', arrTime: '1915', equip: '738', classes1: CLASS_TEMPLATES[8].c1, classes2: CLASS_TEMPLATES[8].c2 },
+      { airline: 'BG', flightNumber: '437', depTime: '2000', arrTime: '2045', equip: '738', classes1: CLASS_TEMPLATES[9].c1, classes2: CLASS_TEMPLATES[9].c2 },
+      { airline: 'VQ', flightNumber: '947', depTime: '2115', arrTime: '2200', equip: 'AT7', classes1: CLASS_TEMPLATES[10].c1, classes2: CLASS_TEMPLATES[10].c2 },
+      { airline: 'BS', flightNumber: '149', depTime: '2200', arrTime: '2245', equip: 'AT7', classes1: CLASS_TEMPLATES[11].c1, classes2: CLASS_TEMPLATES[11].c2 },
+    ];
   }
 
-  // International searches: find all direct and connecting carriers
+  // 5. ROUTE: Bangladesh to Saudi Arabia (DAC to RUH, JED, MED, DMM)
+  if ((o === 'DAC' && (d === 'RUH' || d === 'JED' || d === 'MED' || d === 'DMM')) || ((o === 'RUH' || o === 'JED' || o === 'MED') && d === 'DAC')) {
+    return [
+      { airline: 'SV', flightNumber: '805', depTime: '0355', arrTime: '0820', equip: '77W', classes1: CLASS_TEMPLATES[0].c1, classes2: CLASS_TEMPLATES[0].c2 }, // Saudia Direct
+      { airline: 'BG', flightNumber: '049', depTime: '0830', arrTime: '1215', equip: '77W', classes1: CLASS_TEMPLATES[1].c1, classes2: CLASS_TEMPLATES[1].c2 }, // Biman Direct
+      { airline: 'EK', flightNumber: '581', depTime: '1015', arrTime: '1320', equip: '77W', transitHub: 'DXB', transitFlightNumber: '2063', transitDepTime: '1500', transitArrTime: '1615', transitEquip: '77W', elapsedTime: '08:00', classes1: CLASS_TEMPLATES[2].c1, classes2: CLASS_TEMPLATES[2].c2 },
+      { airline: 'QR', flightNumber: '641', depTime: '1055', arrTime: '1305', equip: '77W', transitHub: 'DOH', transitFlightNumber: '1164', transitDepTime: '1430', transitArrTime: '1545', transitEquip: '359', elapsedTime: '07:50', classes1: CLASS_TEMPLATES[3].c1, classes2: CLASS_TEMPLATES[3].c2 },
+      { airline: 'XY', flightNumber: '852', depTime: '1100', arrTime: '1515', equip: '320', classes1: CLASS_TEMPLATES[4].c1, classes2: CLASS_TEMPLATES[4].c2 }, // Flynas Direct
+      { airline: 'BS', flightNumber: '335', depTime: '1630', arrTime: '2015', equip: '333', classes1: CLASS_TEMPLATES[5].c1, classes2: CLASS_TEMPLATES[5].c2 }, // US-Bangla Direct
+      { airline: 'GF', flightNumber: '251', depTime: '1700', arrTime: '1945', equip: '789', transitHub: 'BAH', transitFlightNumber: '167', transitDepTime: '2045', transitArrTime: '2150', transitEquip: '321', elapsedTime: '06:50', classes1: CLASS_TEMPLATES[6].c1, classes2: CLASS_TEMPLATES[6].c2 },
+      { airline: 'SV', flightNumber: '807', depTime: '1930', arrTime: '2355', equip: '333', classes1: CLASS_TEMPLATES[7].c1, classes2: CLASS_TEMPLATES[7].c2 }, // Saudia Direct
+      { airline: 'BG', flightNumber: '039', depTime: '1945', arrTime: '2330', equip: '788', classes1: CLASS_TEMPLATES[8].c1, classes2: CLASS_TEMPLATES[8].c2 }, // Biman Direct
+      { airline: 'XY', flightNumber: '854', depTime: '2130', arrTime: '0145', equip: '321', classes1: CLASS_TEMPLATES[9].c1, classes2: CLASS_TEMPLATES[9].c2 }, // Flynas Direct
+      { airline: 'SV', flightNumber: '815', depTime: '2200', arrTime: '0215', equip: '789', classes1: CLASS_TEMPLATES[10].c1, classes2: CLASS_TEMPLATES[10].c2 }, // Saudia Direct
+      { airline: 'BG', flightNumber: '041', depTime: '2315', arrTime: '0300', equip: '77W', classes1: CLASS_TEMPLATES[11].c1, classes2: CLASS_TEMPLATES[11].c2 }, // Biman Direct
+    ];
+  }
+
+  // 6. GENERAL INTERNATIONAL SECTOR: Mix of 5 to 7 eligible airlines
   const candidates = Object.keys(AIRLINE_HUB_PROFILES);
-  const validDirect: string[] = [];
-  const validTransit: string[] = [];
+  const eligibleAirlines: string[] = [];
 
   for (const air of candidates) {
-    // STRICT Bangladesh rule
     if (['BG', 'BS', 'VQ', '2A'].includes(air) && oCountry !== 'BD' && dCountry !== 'BD') {
       continue;
     }
-
-    if (canAirlineOperateDirect(air, o, d)) {
-      validDirect.push(air);
-    } else if (getAirlineConnectingHub(air, o, d)) {
-      validTransit.push(air);
+    if (canAirlineOperateDirect(air, o, d) || getAirlineConnectingHub(air, o, d)) {
+      eligibleAirlines.push(air);
     }
   }
 
-  // Combine to create an authentic 10-16 flight list
-  const combined: string[] = [];
+  // Ensure minimum diverse pool (5 to 8 airlines)
+  const defaultIntlPool = (oCountry === 'BD' || dCountry === 'BD')
+    ? ['BG', 'BS', 'EK', 'QR', 'SV', 'TK', 'GF', 'KU']
+    : ['EK', 'QR', 'TK', 'BA', 'LH', 'AF', 'SV', 'SQ'];
 
-  // Add direct carriers first (repeated if multiple frequencies exist)
-  validDirect.forEach((air) => {
-    combined.push(air);
-    combined.push(air);
-  });
-
-  // Add transit carriers
-  validTransit.forEach((air) => {
-    combined.push(air);
-  });
-
-  // If list is less than 12, pad with leading valid carriers
-  while (combined.length < 12 && (validDirect.length > 0 || validTransit.length > 0)) {
-    const pool = validDirect.length > 0 ? validDirect : validTransit;
-    combined.push(pool[combined.length % pool.length]);
+  for (const defAir of defaultIntlPool) {
+    if (!eligibleAirlines.includes(defAir)) {
+      if (['BG', 'BS'].includes(defAir) && oCountry !== 'BD' && dCountry !== 'BD') continue;
+      eligibleAirlines.push(defAir);
+    }
   }
 
-  return combined.slice(0, 16);
-};
+  const selectedAirlines = eligibleAirlines.slice(0, 7);
+  const slots: { air: string; dep: string }[] = [];
+  const hours = ['0215', '0440', '0715', '0930', '1145', '1350', '1530', '1745', '1930', '2115', '2245', '2350'];
 
-// Generate realistic schedules for a carrier on a given route
-export const generateScheduleForCarrier = (
-  airline: string,
-  orig: string,
-  dest: string,
-  index: number
-): FlightRoutePlan => {
-  const air = airline.toUpperCase();
-  const o = orig.toUpperCase();
-  const d = dest.toUpperCase();
-  const profile = AIRLINE_HUB_PROFILES[air] || {
-    code: air,
-    name: air,
-    country: 'XX',
-    hubs: ['DXB'],
-    aircraft: ['77W', '789'],
-    directDestinations: [],
-  };
+  hours.forEach((dep, idx) => {
+    const air = selectedAirlines[idx % selectedAirlines.length];
+    slots.push({ air, dep });
+  });
 
-  const isDirect = canAirlineOperateDirect(air, o, d);
-  const transitHub = isDirect ? undefined : getAirlineConnectingHub(air, o, d);
+  return slots.map((slot, idx) => {
+    const air = slot.air;
+    const dep = slot.dep;
+    const cls = CLASS_TEMPLATES[idx % CLASS_TEMPLATES.length];
+    const isDirect = canAirlineOperateDirect(air, o, d);
+    const transitHub = isDirect ? undefined : getAirlineConnectingHub(air, o, d);
+    const profile = AIRLINE_HUB_PROFILES[air] || {
+      code: air,
+      name: air,
+      country: 'XX',
+      hubs: ['DXB'],
+      aircraft: ['77W', '789'],
+      directDestinations: [],
+    };
 
-  // Pick realistic class sets
-  const cp1 = REALISTIC_CLASS_SETS[index % REALISTIC_CLASS_SETS.length];
-  const cp2 = REALISTIC_CLASS_SETS[(index + 3) % REALISTIC_CLASS_SETS.length];
+    const eq1 = profile.aircraft[idx % profile.aircraft.length];
+    const eq2 = profile.aircraft[(idx + 1) % profile.aircraft.length];
+    const fltNum = String(100 + idx * 17 + (air.charCodeAt(0) % 40));
 
-  // Pick aircraft
-  const eq1 = profile.aircraft[index % profile.aircraft.length];
-  const eq2 = profile.aircraft[(index + 1) % profile.aircraft.length];
-
-  // Look into authentic catalog first
-  const catalog = AUTHENTIC_FLIGHT_CATALOG[air];
-  if (catalog && catalog.length > 0) {
-    const item = catalog[index % catalog.length];
     if (isDirect) {
+      const arrH = (parseInt(dep.substring(0, 2), 10) + 4) % 24;
       return {
         airline: air,
-        flightNumber: item.f1,
-        depTime: item.d1,
-        arrTime: item.a1,
-        equip: item.eq1 || eq1,
-        classes1: cp1.c1,
-        classes2: cp1.c2,
-      };
-    } else if (transitHub) {
-      return {
-        airline: air,
-        flightNumber: item.f1,
-        depTime: item.d1,
-        arrTime: item.a1,
-        equip: item.eq1 || eq1,
-        transitHub,
-        transitFlightNumber: item.f2 || String(parseInt(item.f1, 10) + 20),
-        transitDepTime: item.d2 || '0930',
-        transitArrTime: item.a2 || '1415',
-        transitEquip: item.eq2 || eq2,
-        elapsedTime: item.elapsed || '14:20',
-        codeshare: (air === 'QR' && item.f2 === '9709') ? 'BA:QR9709' : undefined,
-        classes1: cp1.c1,
-        classes2: cp1.c2,
-        transitClasses1: cp2.c1,
-        transitClasses2: cp2.c2,
+        flightNumber: fltNum,
+        depTime: dep,
+        arrTime: `${String(arrH).padStart(2, '0')}${dep.substring(2)}`,
+        equip: eq1,
+        classes1: cls.c1,
+        classes2: cls.c2,
       };
     }
-  }
 
-  // Dynamic realistic generation based on departure banks
-  const departureBanks = [
-    { dep: '0230', arrDirect: '0645', arrH1: '0545', depH2: '0815', arrDest: '1330', elapsed: '14:00' },
-    { dep: '0415', arrDirect: '0830', arrH1: '0730', depH2: '0945', arrDest: '1455', elapsed: '13:40' },
-    { dep: '0820', arrDirect: '1240', arrH1: '1130', depH2: '1345', arrDest: '1850', elapsed: '13:30' },
-    { dep: '1050', arrDirect: '1505', arrH1: '1400', depH2: '1615', arrDest: '2125', elapsed: '13:35' },
-    { dep: '1340', arrDirect: '1755', arrH1: '1650', depH2: '1900', arrDest: '0015', elapsed: '13:35' },
-    { dep: '1615', arrDirect: '2030', arrH1: '1925', depH2: '2145', arrDest: '0250', elapsed: '13:35' },
-    { dep: '1945', arrDirect: '2355', arrH1: '2255', depH2: '0130', arrDest: '0645', elapsed: '14:00' },
-    { dep: '2230', arrDirect: '0245', arrH1: '0140', depH2: '0400', arrDest: '0910', elapsed: '13:40' },
-  ];
-
-  const bank = departureBanks[index % departureBanks.length];
-  const numBase = 100 + (index * 12) + (air.charCodeAt(0) % 20);
-  const flt1 = String(numBase);
-  const flt2 = String(numBase + 101);
-
-  if (isDirect) {
-    const isDomestic = isDomesticAirport(o) && isDomesticAirport(d);
-    const arr = isDomestic
-      ? String((parseInt(bank.dep.substring(0, 2), 10) + 1) % 24).padStart(2, '0') + bank.dep.substring(2)
-      : bank.arrDirect;
+    const hub = transitHub || profile.hubs[0] || 'DXB';
+    const arrH1H = (parseInt(dep.substring(0, 2), 10) + 4) % 24;
+    const depH2H = (arrH1H + 2) % 24;
+    const arrDestH = (depH2H + 5) % 24;
 
     return {
       airline: air,
-      flightNumber: flt1,
-      depTime: bank.dep,
-      arrTime: arr,
-      equip: isDomestic ? 'AT7' : eq1,
-      classes1: cp1.c1,
-      classes2: cp1.c2,
+      flightNumber: fltNum,
+      depTime: dep,
+      arrTime: `${String(arrH1H).padStart(2, '0')}${dep.substring(2)}`,
+      equip: eq1,
+      transitHub: hub,
+      transitFlightNumber: String(parseInt(fltNum, 10) + 102),
+      transitDepTime: `${String(depH2H).padStart(2, '0')}15`,
+      transitArrTime: `${String(arrDestH).padStart(2, '0')}45`,
+      transitEquip: eq2,
+      elapsedTime: '13:45',
+      classes1: cls.c1,
+      classes2: cls.c2,
+      transitClasses1: cls.c1,
+      transitClasses2: cls.c2,
     };
-  }
-
-  // Connecting via hub
-  const hubToUse = transitHub || (profile.hubs[0] || 'DXB');
-  return {
-    airline: air,
-    flightNumber: flt1,
-    depTime: bank.dep,
-    arrTime: bank.arrH1,
-    equip: eq1,
-    transitHub: hubToUse,
-    transitFlightNumber: flt2,
-    transitDepTime: bank.depH2,
-    transitArrTime: bank.arrDest,
-    transitEquip: eq2,
-    elapsedTime: bank.elapsed,
-    classes1: cp1.c1,
-    classes2: cp1.c2,
-    transitClasses1: cp2.c1,
-    transitClasses2: cp2.c2,
-  };
+  });
 };
 
 // ======================================================================
-// 3. PARSERS FOR AN AND FXD INPUTS
+// 4. PARSERS FOR AN AND FXD (ELIMINATES DUPLICATE MONTH & 'SEP' BUGS)
 // ======================================================================
 
 export interface ParsedAnParams {
@@ -845,79 +688,93 @@ export const parseAnInput = (rawCmd: string): ParsedAnParams => {
   const upper = rawCmd.toUpperCase().trim();
   let rem = upper.replace(/^AN\s*/, '').trim();
 
-  // 1. Extract Airline Qualifier: /AQR, //AQR, /A QR, /ASV, //ASV, /ABG, /ABS, or trailing /QR, /SV, /BG, /BS
+  // 1. Extract Airline Qualifier (/AQR, //AQR, /ASV, //ASV, /ABG, /ABS, /A SV, etc.)
   let airlineFilter: string | undefined = undefined;
   const airMatch = rem.match(/(?:\/\/|\/|\s)A\s*([A-Z0-9]{2})(?:\s|$)/);
   if (airMatch) {
     airlineFilter = airMatch[1];
     rem = rem.replace(airMatch[0], ' ').trim();
   } else {
-    const slashAir = rem.match(/(?:\/\/|\/)([A-Z0-9]{2})$/);
-    if (slashAir) {
-      airlineFilter = slashAir[1];
-      rem = rem.replace(slashAir[0], ' ').trim();
+    const trailingSlashAir = rem.match(/(?:\/\/|\/)([A-Z0-9]{2})$/);
+    if (trailingSlashAir) {
+      airlineFilter = trailingSlashAir[1];
+      rem = rem.replace(trailingSlashAir[0], ' ').trim();
     }
   }
 
-  // 2. Strip any time qualifiers (e.g. 1800, /1800) or class qualifiers (e.g. /CY, /CC, /K)
+  // 2. Strip any time qualifiers (e.g. 1800, /1800) or class qualifiers (/CY, etc.)
   rem = rem.replace(/(?:\/\/|\/|\s)[0-2]\d[0-5]\d(?:\s|$)/g, ' ');
   rem = rem.replace(/(?:\/\/|\/)[A-Z]{1,2}(?:\s|$)/g, ' ');
 
-  // 3. Extract Date: Day (1-2 digits) + 3-letter Month from MONTHS (e.g. 30SEP, 15OCT, 25NOV, 10JAN)
-  let date = '30SEP';
-  const monthListStr = MONTHS.join('|');
-  const dateRegex = new RegExp(`(?:^|[\\s\\/-]|D)?(\\d{1,2})(${monthListStr})(?:\\d{2,4})?(?:[\\s\\/-]|$)`);
-  const dateMatch = rem.match(dateRegex);
+  // 3. Compact string for unambiguous pattern matching
+  const compact = rem.replace(/[\s\/-]+/g, '');
 
-  if (dateMatch) {
-    const day = dateMatch[1].padStart(2, '0');
-    const month = dateMatch[2];
-    date = `${day}${month}`;
-    rem = rem.replace(dateMatch[0], ' ').trim();
+  let date = '30SEP';
+  let orig = 'DAC';
+  let dest = 'DXB';
+
+  // Pattern 1: Day (1-2 digits) + 3-letter Month + Optional Year (2 or 4 digits) + Orig (3 letters) + Dest (3 letters)
+  // e.g. "30SEPYYZRUH", "20NOVDACCXE", "30SEPDACDXB", "25OCTDACJED", "30SEP26YYZRUH"
+  const standardMatch = compact.match(/^(\d{1,2})([A-Z]{3})(?:\d{2}|\d{4})?([A-Z]{3})([A-Z]{3})$/);
+  if (standardMatch && MONTHS.includes(standardMatch[2])) {
+    date = `${standardMatch[1].padStart(2, '0')}${standardMatch[2]}`;
+    orig = standardMatch[3];
+    dest = standardMatch[4];
   } else {
-    const dayOnlyMatch = rem.match(/^(\d{1,2})([A-Z]{6})/);
-    if (dayOnlyMatch) {
+    // Pattern 2: Day only (1-2 digits) + Orig (3 letters) + Dest (3 letters)
+    // e.g. "15YYZRUH", "30DACDXB"
+    const dayOnlyMatch = compact.match(/^(\d{1,2})([A-Z]{3})([A-Z]{3})$/);
+    if (dayOnlyMatch && !MONTHS.includes(dayOnlyMatch[2])) {
       date = `${dayOnlyMatch[1].padStart(2, '0')}SEP`;
-      rem = dayOnlyMatch[2];
+      orig = dayOnlyMatch[2];
+      dest = dayOnlyMatch[3];
+    } else {
+      // Pattern 3: No date specified, just Orig (3 letters) + Dest (3 letters)
+      // e.g. "YYZRUH", "DACDXB"
+      const citiesOnlyMatch = compact.match(/^([A-Z]{3})([A-Z]{3})$/);
+      if (citiesOnlyMatch && !MONTHS.includes(citiesOnlyMatch[1]) && !MONTHS.includes(citiesOnlyMatch[2])) {
+        orig = citiesOnlyMatch[1];
+        dest = citiesOnlyMatch[2];
+        date = '30SEP';
+      } else {
+        // Pattern 4: Fallback with token search
+        const dateToken = rem.match(/(?:^|[\s\/-])(\d{1,2})([A-Z]{3})(?:\d{2}|\d{4})?(?:[\s\/-]|$)/);
+        if (dateToken && MONTHS.includes(dateToken[2])) {
+          date = `${dateToken[1].padStart(2, '0')}${dateToken[2]}`;
+          rem = rem.replace(dateToken[0], ' ').trim();
+        }
+
+        const cleanTokens = rem.replace(/[^A-Z]/g, ' ').split(/\s+/).filter((t) => t.length === 3 && !MONTHS.includes(t));
+        if (cleanTokens.length >= 2) {
+          orig = cleanTokens[0];
+          dest = cleanTokens[1];
+        } else if (cleanTokens.length === 1) {
+          if (cleanTokens[0] === 'DAC') {
+            orig = 'DAC';
+            dest = 'DXB';
+          } else {
+            orig = 'DAC';
+            dest = cleanTokens[0];
+          }
+        }
+      }
     }
   }
 
-  // 4. Extract Origin and Destination
-  let orig = 'DAC';
-  let dest = 'JED';
-
-  const lettersOnly = rem.replace(/[^A-Z]/g, '');
-
-  if (lettersOnly.length === 6) {
-    orig = lettersOnly.substring(0, 3);
-    dest = lettersOnly.substring(3, 6);
-  } else {
-    const tokens = (rem.match(/[A-Z]{3}/g) || []).filter((t) => !MONTHS.includes(t));
-    if (tokens.length >= 2) {
-      orig = tokens[0];
-      dest = tokens[1];
-    } else if (tokens.length === 1) {
-      if (tokens[0] === 'DAC') {
-        orig = 'DAC';
-        dest = 'JED';
-      } else {
-        orig = 'DAC';
-        dest = tokens[0];
-      }
-    } else if (lettersOnly.length >= 3) {
-      if (lettersOnly.startsWith('DAC')) {
-        orig = 'DAC';
-        dest = lettersOnly.substring(3, 6) || 'JED';
-      } else {
-        dest = lettersOnly.substring(0, 3);
-        orig = 'DAC';
-      }
-    }
+  // Safety sanitization: NEVER allow 'SEP' or any month string to be an origin or destination!
+  if (orig === 'SEP' || MONTHS.includes(orig)) {
+    orig = 'DAC';
+  }
+  if (dest === 'SEP' || MONTHS.includes(dest)) {
+    dest = orig === 'DAC' ? 'DXB' : 'DAC';
+  }
+  if (orig === dest) {
+    dest = orig === 'DAC' ? 'DXB' : 'DAC';
   }
 
   return {
-    orig: orig || 'DAC',
-    dest: dest || 'JED',
+    orig,
+    dest,
     date: cleanGdsDate(date),
     airlineFilter,
   };
@@ -940,7 +797,7 @@ export const parseFxdInput = (rawCmd: string): ParsedFxdParams => {
   const upper = rawCmd.toUpperCase().trim();
   const body = upper.replace(/^FXD\s*/, '').trim();
 
-  // 1. Airline filter: //ASV, /ASV, /A SV, /AQR, //AEK, /ABG, /ABS
+  // 1. Airline filter
   let airlineFilter: string | undefined = undefined;
   const airMatch = body.match(/(?:\/\/|\/|\s)A\s*([A-Z0-9]{2})/);
   if (airMatch) {
@@ -997,44 +854,46 @@ export const parseFxdInput = (rawCmd: string): ParsedFxdParams => {
 
   // 5. Origin & Destination cities
   let orig = 'DAC';
-  let dest = 'JED';
+  let dest = 'DXB';
 
   const origFromStart = body.match(/^([A-Z]{3})/);
-  if (origFromStart && AIRPORTS.some((a) => a.code === origFromStart[1])) {
+  if (origFromStart && !MONTHS.includes(origFromStart[1])) {
     orig = origFromStart[1];
   }
 
   if (legMatches.length > 0) {
     dest = legMatches[0][2];
   } else {
-    const cleanWithoutQualifiers = body
+    const cleanTokens = body
       .replace(/(?:\/\/|\/|\s)A\s*[A-Z0-9]{2}/g, '')
       .replace(/\/D\d{1,2}[A-Z]{3}/g, '')
       .replace(/\d{1,2}[A-Z]{3}/g, '')
       .replace(/\/\/[A-Z0-9\/]+/g, '')
-      .trim();
+      .replace(/[^A-Z]/g, ' ')
+      .split(/\s+/)
+      .filter((t) => t.length === 3 && !MONTHS.includes(t));
 
-    const pairMatch = cleanWithoutQualifiers.match(/([A-Z]{3})[\s\/-]*([A-Z]{3})/);
-    if (pairMatch && !MONTHS.includes(pairMatch[1]) && !MONTHS.includes(pairMatch[2])) {
-      orig = pairMatch[1];
-      dest = pairMatch[2];
-    } else {
-      const tokens = (cleanWithoutQualifiers.match(/[A-Z]{3}/g) || []).filter(
-        (tok) => !MONTHS.includes(tok) && AIRPORTS.some((a) => a.code === tok)
-      );
-      if (tokens.length >= 2) {
-        orig = tokens[0];
-        dest = tokens[1];
-      } else if (tokens.length === 1) {
+    if (cleanTokens.length >= 2) {
+      orig = cleanTokens[0];
+      dest = cleanTokens[1];
+    } else if (cleanTokens.length === 1) {
+      if (cleanTokens[0] === 'DAC') {
         orig = 'DAC';
-        dest = tokens[0];
+        dest = 'DXB';
+      } else {
+        orig = 'DAC';
+        dest = cleanTokens[0];
       }
     }
   }
 
+  if (orig === 'SEP' || MONTHS.includes(orig)) orig = 'DAC';
+  if (dest === 'SEP' || MONTHS.includes(dest)) dest = orig === 'DAC' ? 'DXB' : 'DAC';
+  if (orig === dest) dest = orig === 'DAC' ? 'DXB' : 'DAC';
+
   return {
-    orig: orig || 'DAC',
-    dest: dest || 'JED',
+    orig,
+    dest,
     outboundDate: cleanGdsDate(outboundDate),
     isRoundTrip,
     returnDate: returnDate ? cleanGdsDate(returnDate) : undefined,
@@ -1047,7 +906,7 @@ export const parseFxdInput = (rawCmd: string): ParsedFxdParams => {
 };
 
 // ======================================================================
-// 4. GENERATE FLIGHT AVAILABILITY (AN) - 10 TO 16 FLIGHTS
+// 5. GENERATE FLIGHT AVAILABILITY (AN) - DIVERSE MULTI-AIRLINE MIX
 // ======================================================================
 
 export const generateAvailability = (
@@ -1064,7 +923,7 @@ export const generateAvailability = (
   const oCountry = getAirportCountry(orig);
   const dCountry = getAirportCountry(dest);
 
-  // STRICT BANGLADESH RULE:
+  // STRICT BANGLADESH RESTRICTION FOR BG/BS/VQ/2A
   if (air && ['BG', 'BS', 'VQ', '2A'].includes(air) && oCountry !== 'BD' && dCountry !== 'BD') {
     const lines = [
       `AN${dte}${orig}${dest}/A${air}`,
@@ -1074,38 +933,22 @@ export const generateAvailability = (
     return { options: [], displayText: lines.join('\n') };
   }
 
-  // Determine list of carrier slots (10 to 16 flights)
-  let carriersToUse: string[] = [];
-  if (air) {
-    // 10 to 14 options for this specific airline
-    carriersToUse = Array(12).fill(air);
-  } else {
-    carriersToUse = getCarriersForSector(orig, dest);
-  }
-
-  // Ensure 10-16 options
-  if (carriersToUse.length < 10) {
-    const fallbackAir = (oCountry === 'BD' || dCountry === 'BD') ? 'BG' : 'EK';
-    while (carriersToUse.length < 12) {
-      carriersToUse.push(fallbackAir);
-    }
-  } else if (carriersToUse.length > 16) {
-    carriersToUse = carriersToUse.slice(0, 16);
-  }
+  // Get diverse flight roster (5 to 8 airlines when no filter; single airline when filter is set)
+  const roster = getDiverseFlightRoster(orig, dest, air);
 
   const options: AvailabilityOption[] = [];
 
-  carriersToUse.forEach((carrier, index) => {
+  roster.forEach((plan, index) => {
     const lineNum = index + 1;
-    const plan = generateScheduleForCarrier(carrier, orig, dest, index);
 
     if (plan.transitHub && plan.transitFlightNumber) {
       // Connecting flight (Leg 1: Orig -> Hub, Leg 2: Hub -> Dest)
+      // Guaranteed: Leg 2 destination is strictly 'dest', NEVER 'orig'!
       options.push({
         lineNum,
         date: dte,
         flight1: {
-          airline: carrier,
+          airline: plan.airline,
           flightNumber: plan.flightNumber,
           classes1: plan.classes1,
           classes2: plan.classes2,
@@ -1117,13 +960,13 @@ export const generateAvailability = (
           equip: plan.equip,
         },
         flight2: {
-          airline: carrier,
+          airline: plan.airline,
           flightNumber: plan.transitFlightNumber,
           codeshare: plan.codeshare,
           classes1: plan.transitClasses1 || plan.classes1,
           classes2: plan.transitClasses2 || plan.classes2,
           origin: plan.transitHub,
-          destination: dest,
+          destination: dest, // Strictly the final destination!
           destTerm: '2',
           depTime: plan.transitDepTime || '0900',
           arrTime: plan.transitArrTime || '1415',
@@ -1137,7 +980,7 @@ export const generateAvailability = (
         lineNum,
         date: dte,
         flight1: {
-          airline: carrier,
+          airline: plan.airline,
           flightNumber: plan.flightNumber,
           classes1: plan.classes1,
           classes2: plan.classes2,
@@ -1155,6 +998,7 @@ export const generateAvailability = (
 
   // Build authentic Amadeus AN GDS display
   const lines: string[] = [];
+  // Echo line strictly echos requested date, origin, and destination!
   lines.push(`AN${dte}${orig}${dest}${air ? '/A' + air : ''}`);
 
   const destAirport = AIRPORTS.find((a) => a.code === dest);
@@ -1198,8 +1042,62 @@ export const generateAvailability = (
 };
 
 // ======================================================================
-// 5. GENERATE LOWEST FARE SEARCH (FXD) - 10 TO 16 OPTIONS
+// 6. GENERATE LOWEST FARE SEARCH (FXD) - DIVERSE MULTI-AIRLINE MIX
 // ======================================================================
+
+export const calculateSectorFare = (
+  orig: string,
+  dest: string,
+  isBusiness: boolean = false,
+  isRoundTrip: boolean = false
+): { base: number; tax: number; total: number } => {
+  const o = orig.toUpperCase();
+  const d = dest.toUpperCase();
+  const oCountry = getAirportCountry(o);
+  const dCountry = getAirportCountry(d);
+
+  let base = 70000;
+  let tax = 20000;
+
+  if (oCountry === 'BD' && dCountry === 'BD') {
+    base = 5200;
+    tax = 1400;
+  } else if (['CCU', 'DEL', 'BOM', 'MAA', 'KTM', 'CMB'].includes(d) || ['CCU', 'DEL', 'BOM'].includes(o)) {
+    base = 16500;
+    tax = 5800;
+  } else if (['SIN', 'BKK', 'KUL', 'HKG', 'CAN'].includes(d) || ['SIN', 'BKK', 'KUL'].includes(o)) {
+    base = 39500;
+    tax = 13800;
+  } else if (['JED', 'MED', 'RUH', 'DMM', 'DXB', 'SHJ', 'AUH', 'DOH', 'KWI', 'BAH', 'MCT'].includes(d) || ['JED', 'RUH', 'DXB', 'DOH'].includes(o)) {
+    base = 54500;
+    tax = 18500;
+  } else if (['LHR', 'LGW', 'MAN', 'CDG', 'FRA', 'MUC', 'AMS', 'FCO', 'MXP', 'IST'].includes(d) || ['LHR', 'CDG', 'FRA', 'AMS'].includes(o)) {
+    base = 98000;
+    tax = 29500;
+  } else if (['JFK', 'EWR', 'NYC', 'YYZ', 'YVR', 'YUL', 'ORD', 'LAX', 'SFO', 'IAD', 'ATL', 'DFW', 'IAH'].includes(d) || ['JFK', 'ORD', 'YYZ'].includes(o)) {
+    base = 112000;
+    tax = 33000;
+  } else {
+    base = 86000;
+    tax = 26000;
+  }
+
+  if (isBusiness) {
+    base = Math.round(base * 2.5);
+    tax = Math.round(tax * 1.5);
+  }
+
+  if (isRoundTrip) {
+    base = Math.round(base * 1.78);
+    tax = Math.round(tax * 1.72);
+  }
+
+  return {
+    base,
+    tax,
+    total: base + tax,
+  };
+};
 
 export const generateLowestFareSearch = (
   rawCmd: string
@@ -1210,7 +1108,7 @@ export const generateLowestFareSearch = (
   const oCountry = getAirportCountry(orig);
   const dCountry = getAirportCountry(dest);
 
-  // STRICT BANGLADESH RULE:
+  // STRICT BANGLADESH RESTRICTION
   if (airlineFilter && ['BG', 'BS', 'VQ', '2A'].includes(airlineFilter) && oCountry !== 'BD' && dCountry !== 'BD') {
     const text = [
       `FXD BEST BUY - FARE SEARCH RESULTS: ${orig}-${dest} / ${outboundDate}`,
@@ -1220,34 +1118,15 @@ export const generateLowestFareSearch = (
     return { options: [], displayText: text };
   }
 
-  // Determine carriers (10 to 14 options)
-  let carriersToUse: string[] = [];
-  if (airlineFilter) {
-    carriersToUse = Array(12).fill(airlineFilter.toUpperCase());
-  } else {
-    carriersToUse = getCarriersForSector(orig, dest);
-  }
-
-  if (carriersToUse.length < 10) {
-    const fallbackAir = (oCountry === 'BD' || dCountry === 'BD') ? 'BG' : 'EK';
-    while (carriersToUse.length < 12) {
-      carriersToUse.push(fallbackAir);
-    }
-  } else if (carriersToUse.length > 14) {
-    carriersToUse = carriersToUse.slice(0, 14);
-  }
-
+  const roster = getDiverseFlightRoster(orig, dest, airlineFilter);
   const sectorFare = calculateSectorFare(orig, dest, isBusiness, isRoundTrip);
   const options: FareSearchOption[] = [];
 
   const bookingClasses = isBusiness ? ['J', 'C', 'D'] : ['T', 'Q', 'V', 'L', 'M', 'K', 'B', 'Y'];
 
-  carriersToUse.forEach((airline, index) => {
+  roster.forEach((plan, index) => {
     const optNum = index + 1;
-    const plan = generateScheduleForCarrier(airline, orig, dest, index);
-
-    // Price variation step
-    const priceStep = 1 + (index * 0.045);
+    const priceStep = 1 + index * 0.042;
     const basePerPax = Math.round(sectorFare.base * priceStep);
     const taxPerPax = Math.round(sectorFare.tax * priceStep);
 
@@ -1255,13 +1134,15 @@ export const generateLowestFareSearch = (
     const taxesTotal = taxPerPax * (adt + chd + inf);
     const totalFare = baseTotal + taxesTotal;
 
-    const bookingClass = isBusiness ? bookingClasses[index % bookingClasses.length] : bookingClasses[Math.min(index, bookingClasses.length - 1)];
+    const bookingClass = isBusiness
+      ? bookingClasses[index % bookingClasses.length]
+      : bookingClasses[Math.min(index, bookingClasses.length - 1)];
 
     const flights: FareSearchFlight[] = [];
 
     // Outbound leg 1
     flights.push({
-      airline,
+      airline: plan.airline,
       flightNumber: plan.flightNumber,
       origin: orig,
       destination: plan.transitHub || dest,
@@ -1275,10 +1156,10 @@ export const generateLowestFareSearch = (
     // Outbound connecting leg 2 if applicable
     if (plan.transitHub && plan.transitFlightNumber) {
       flights.push({
-        airline,
+        airline: plan.airline,
         flightNumber: plan.transitFlightNumber,
         origin: plan.transitHub,
-        destination: dest,
+        destination: dest, // Strictly the final destination!
         date: outboundDate,
         depTime: plan.transitDepTime || '0945',
         arrTime: plan.transitArrTime || '1455',
@@ -1292,7 +1173,7 @@ export const generateLowestFareSearch = (
       if (plan.transitHub && plan.transitFlightNumber) {
         // Return Leg 1: Dest -> Hub
         flights.push({
-          airline,
+          airline: plan.airline,
           flightNumber: String(parseInt(plan.transitFlightNumber, 10) + 1),
           origin: dest,
           destination: plan.transitHub,
@@ -1304,7 +1185,7 @@ export const generateLowestFareSearch = (
         });
         // Return Leg 2: Hub -> Orig
         flights.push({
-          airline,
+          airline: plan.airline,
           flightNumber: String(parseInt(plan.flightNumber, 10) + 1),
           origin: plan.transitHub,
           destination: orig,
@@ -1317,7 +1198,7 @@ export const generateLowestFareSearch = (
       } else {
         // Direct Return: Dest -> Orig
         flights.push({
-          airline,
+          airline: plan.airline,
           flightNumber: String(parseInt(plan.flightNumber, 10) + 1),
           origin: dest,
           destination: orig,
@@ -1332,7 +1213,7 @@ export const generateLowestFareSearch = (
 
     options.push({
       optionNumber: optNum,
-      airline,
+      airline: plan.airline,
       flights,
       fareBasis: `${bookingClass}LRBD1`,
       currency: 'BDT',
@@ -1345,7 +1226,6 @@ export const generateLowestFareSearch = (
 
   // Sort ascending by total fare
   options.sort((a, b) => a.totalFare - b.totalFare);
-  // Re-index options 1..N
   options.forEach((opt, idx) => {
     opt.optionNumber = idx + 1;
   });
@@ -1392,7 +1272,7 @@ export const generateLowestFareSearch = (
 };
 
 // ======================================================================
-// 6. TIMETABLE (TN) - 10 TO 16 ROWS
+// 7. TIMETABLE (TN)
 // ======================================================================
 
 export const generateTimetable = (rawCmd: string): string => {
@@ -1417,31 +1297,37 @@ export const generateTimetable = (rawCmd: string): string => {
   }
 
   let orig = 'DAC';
-  let dest = 'JED';
+  let dest = 'DXB';
 
   const pairMatch = afterTn.match(/([A-Z]{3})[\s\/-]*([A-Z]{3})/);
-  if (pairMatch) {
+  if (pairMatch && !MONTHS.includes(pairMatch[1]) && !MONTHS.includes(pairMatch[2])) {
     orig = pairMatch[1];
     dest = pairMatch[2];
   } else {
-    const cleanTokens = afterTn.replace(/\d{1,2}[A-Z]{3}/g, '').match(/[A-Z]{3}/g) || [];
+    const cleanTokens = afterTn
+      .replace(/\d{1,2}[A-Z]{3}/g, '')
+      .replace(/[^A-Z]/g, ' ')
+      .split(/\s+/)
+      .filter((t) => t.length === 3 && !MONTHS.includes(t));
     if (cleanTokens[0] && cleanTokens[1]) {
       orig = cleanTokens[0];
       dest = cleanTokens[1];
     }
   }
 
+  if (orig === 'SEP' || MONTHS.includes(orig)) orig = 'DAC';
+  if (dest === 'SEP' || MONTHS.includes(dest)) dest = orig === 'DAC' ? 'DXB' : 'DAC';
+
   const destAirport = AIRPORTS.find((a) => a.code === dest);
   const destName = destAirport ? `${destAirport.city} ${destAirport.name}.${destAirport.countryCode}` : `${dest}.${dest}`;
 
-  const carriers = getCarriersForSector(orig, dest, air);
+  const roster = getDiverseFlightRoster(orig, dest, air);
   const lines: string[] = [];
   lines.push(`** AMADEUS TIMETABLE - TN ** ${dest} ${destName.padEnd(26, ' ')} ${date}`);
 
-  carriers.slice(0, 14).forEach((carrier, index) => {
+  roster.forEach((plan, index) => {
     const optNum = index + 1;
-    const plan = generateScheduleForCarrier(carrier, orig, dest, index);
-    const fltPad = `${carrier} ${plan.flightNumber}`.padEnd(8, ' ');
+    const fltPad = `${plan.airline} ${plan.flightNumber}`.padEnd(8, ' ');
     const isStop = plan.transitHub ? 1 : 0;
     const elapsed = isStop ? (plan.elapsedTime || '13:45') : (isDomesticAirport(orig) && isDomesticAirport(dest) ? '1:00' : '6:25');
     const days = index % 2 === 0 ? '1234567' : '1.3.5.7';
@@ -1455,16 +1341,19 @@ export const generateTimetable = (rawCmd: string): string => {
 };
 
 // ======================================================================
-// 7. FARE DISPLAY (FQD)
+// 8. FARE DISPLAY (FQD)
 // ======================================================================
 
 export const generateFareDisplay = (rawCmd: string): string => {
   const upper = rawCmd.toUpperCase().trim();
   const match = upper.match(/^FQD\s*([A-Z]{3})([A-Z]{3})(?:\/A([A-Z0-9]{2}))?/);
 
-  const orig = match ? match[1] : 'DAC';
-  const dest = match ? match[2] : 'JED';
-  const air = match && match[3] ? match[3] : 'SV';
+  let orig = match ? match[1] : 'DAC';
+  let dest = match ? match[2] : 'DXB';
+  const air = match && match[3] ? match[3] : 'EK';
+
+  if (orig === 'SEP' || MONTHS.includes(orig)) orig = 'DAC';
+  if (dest === 'SEP' || MONTHS.includes(dest)) dest = orig === 'DAC' ? 'DXB' : 'DAC';
 
   const sectorFare = calculateSectorFare(orig, dest, false, false);
   const baseAmt = sectorFare.base;
@@ -1485,7 +1374,7 @@ export const generateFareDisplay = (rawCmd: string): string => {
 };
 
 // ======================================================================
-// 8. FARE NOTES & PENALTIES (FQN)
+// 9. FARE NOTES & PENALTIES (FQN)
 // ======================================================================
 
 export const generateFareNotes = (rawCmd: string): string => {
@@ -1496,7 +1385,7 @@ export const generateFareNotes = (rawCmd: string): string => {
   if (ruleCode === 'PE' || ruleCode === '16') {
     return [
       `FQN 1*PE - PENALTIES CATEGORY 16`,
-      `TARIFF: INT-BDT PUBLISHED FARES   CARRIER: SAUDIA / GENERAL GDS`,
+      `TARIFF: INT-BDT PUBLISHED FARES   CARRIER: GENERAL GDS`,
       `RULE: BD01   FARE BASIS: YLRBD1`,
       `-----------------------------------------------------------------------------`,
       `CHANGES:`,
@@ -1531,7 +1420,7 @@ export const generateFareNotes = (rawCmd: string): string => {
 };
 
 // ======================================================================
-// 9. CURRENCY CONVERSION (FQC)
+// 10. CURRENCY CONVERSION (FQC)
 // ======================================================================
 
 export const convertCurrency = (rawCmd: string): string => {
