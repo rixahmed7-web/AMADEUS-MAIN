@@ -19,6 +19,8 @@ export interface CommandResult {
   clearTerminal?: boolean;
   navAction?: 'down' | 'up' | 'top' | 'bottom';
   triggerPrint?: boolean;
+  isItr?: boolean;
+  isTtp?: boolean;
   emailSent?: {
     type: 'receipt' | 'itinerary';
     email: string;
@@ -1148,58 +1150,94 @@ const executeSingleGdsCommand = (
 
   // 15. Ticket Issuance: TTP (e.g. TTP, TTP/RT, TTP/P1, TTP/S2, TTP/TKT)
   if (upper.startsWith('TTP')) {
-    if (!currentSession.pnrLocator) {
-      return {
-        output: 'PNR MUST BE ENDED AND RETRIEVED (ER) BEFORE ISSUING TICKET',
-        updatedSession: currentSession,
+    let sessionToIssue: PnrSession = { ...currentSession };
+
+    // Auto-complete essential fields if practicing directly with TTP
+    if (!sessionToIssue.pnrLocator) {
+      sessionToIssue.pnrLocator = 'XFV45T';
+    }
+
+    if (!sessionToIssue.pricing) {
+      sessionToIssue.pricing = {
+        baseFare: 85000,
+        taxes: 22000,
+        total: 107000,
+        currency: 'BDT',
+        fareBasis: 'YLRBD1',
       };
     }
 
-    if (!currentSession.pricing) {
+    if (sessionToIssue.passengers.length === 0) {
+      sessionToIssue.passengers = [
+        { id: 1, surname: 'SHARIF', firstName: 'HRIDOY', title: 'MR', type: 'ADT' },
+      ];
+    }
+
+    if (sessionToIssue.segments.length === 0) {
+      sessionToIssue.segments = [
+        {
+          segmentNumber: 1,
+          airline: 'TK',
+          flightNumber: '144',
+          bookingClass: 'Y',
+          date: '20MAY',
+          origin: 'DAC',
+          destination: 'IST',
+          status: 'HK1',
+          depTime: '0410',
+          arrTime: '0835',
+        },
+      ];
+    }
+
+    if (currentSession.isTicketed && currentSession.ticketNumbers.length > 0) {
+      const existingItr = buildItrReceiptData(currentSession, ticketSalesDatabase);
       return {
-        output: 'NEED TST - RUN FXP TO PRICE ITINERARY BEFORE ISSUANCE',
+        output: [
+          'OK ETICKET ISSUED',
+          ...currentSession.ticketNumbers.map(
+            (tkt, idx) =>
+              `FA PAX ${tkt}/ET${currentSession.segments[0]?.airline || 'TK'}/BDT${currentSession.pricing?.total || 107000}/20MAY26/${currentSession.officeId || 'DAC360'}/21368575/P${idx + 1}`
+          ),
+          'TKT ISSUED / OK',
+        ].join('\n'),
         updatedSession: currentSession,
+        isTtp: true,
+        itrData: existingItr || undefined,
       };
     }
 
-    if (currentSession.isTicketed) {
-      return {
-        output: 'ALREADY TICKETED - TICKET NUMBERS ISSUED',
-        updatedSession: currentSession,
-      };
-    }
-
-    // Determine airline numeric prefix (e.g. 157 for QR, 176 for EK, 997 for BG, 065 for SV, 618 for SQ)
-    const airCode = currentSession.segments[0]?.airline || 'QR';
+    // Determine airline numeric prefix (e.g. 235 for TK, 157 for QR, 176 for EK, 997 for BG, 065 for SV, 618 for SQ)
+    const airCode = sessionToIssue.segments[0]?.airline || 'TK';
     const airInfo = AIRLINES.find((a) => a.code === airCode);
-    const prefix = airInfo ? airInfo.numericCode : '157';
+    const prefix = airInfo ? airInfo.numericCode : (airCode === 'TK' ? '235' : '157');
 
-    // Issue ticket for every passenger
+    // Issue 13-digit ticket for every passenger: e.g. 235-6408283586
     const ticketNumbers: string[] = [];
-    currentSession.passengers.forEach(() => {
-      const random9 = Math.floor(1000000000 + Math.random() * 9000000000);
-      ticketNumbers.push(`${prefix}-${random9}`);
+    sessionToIssue.passengers.forEach((p, idx) => {
+      // Use standard deterministic or high-quality 10-digit number
+      const random10 = idx === 0 ? '6408283586' : String(Math.floor(1000000000 + Math.random() * 9000000000));
+      ticketNumbers.push(`${prefix}-${random10}`);
     });
 
-    // If no passengers explicitly in array, generate 1 ticket
     if (ticketNumbers.length === 0) {
-      ticketNumbers.push(`${prefix}-${Math.floor(1000000000 + Math.random() * 9000000000)}`);
+      ticketNumbers.push(`${prefix}-6408283586`);
     }
 
     const updated: PnrSession = {
-      ...currentSession,
+      ...sessionToIssue,
       isTicketed: true,
       ticketNumbers,
     };
 
-    savedPnrs.set(currentSession.pnrLocator, updated);
+    savedPnrs.set(updated.pnrLocator!, updated);
 
-    const totalAmount = updated.pricing ? updated.pricing.total : 99500;
+    const totalAmount = updated.pricing ? updated.pricing.total : 107000;
 
-    // Register into ticket sales database (for TJQ, TWD, TRDC)
+    // Register into ticket sales database (for TJQ, TWD, TRDC, ITR)
     ticketNumbers.forEach((tkt, idx) => {
-      const pax = currentSession.passengers[idx];
-      const paxName = pax ? `${pax.surname}/${pax.firstName} ${pax.title}` : 'HOSSAIN/ABUL MR';
+      const pax = updated.passengers[idx];
+      const paxName = pax ? `${pax.surname}/${pax.firstName} ${pax.title}` : 'SHARIF/HRIDOY MR';
       const gross = totalAmount;
       const commPct = parseFloat(updated.commission || '7') || 7;
       const commAmt = Math.round(gross * (commPct / 100));
@@ -1207,17 +1245,17 @@ const executeSingleGdsCommand = (
 
       ticketSalesDatabase.push({
         ticketNumber: tkt,
-        pnrLocator: updated.pnrLocator || 'X7K9LP',
+        pnrLocator: updated.pnrLocator || 'XFV45T',
         passengerName: paxName,
         airline: airCode,
         issueDate: '20MAY26',
-        officeId: updated.officeId,
+        officeId: updated.officeId || 'DAC360',
         grossFare: gross,
         tax: Math.round(gross * 0.15),
         commissionPct: commPct,
         commissionAmount: commAmt,
         netPayable: net,
-        formOfPayment: updated.formOfPayment || 'IN VAGT*SHOHOJ',
+        formOfPayment: updated.formOfPayment || 'CASH / INVOICE',
         status: 'OK',
         itinerarySummary: updated.segments.map((s) => `${s.origin} ${s.destination}`).join(' '),
       });
@@ -1225,13 +1263,20 @@ const executeSingleGdsCommand = (
 
     const outputLines = [
       `OK ETICKET ISSUED`,
-      ...ticketNumbers.map((tkt, idx) => `FA PAX ${tkt}/ET${airCode}/BDT${totalAmount}/20MAY26/${updated.officeId}/21368575/P${idx + 1}`),
+      ...ticketNumbers.map(
+        (tkt, idx) =>
+          `FA PAX ${tkt}/ET${airCode}/BDT${totalAmount}/20MAY26/${updated.officeId || 'DAC360'}/21368575/P${idx + 1}`
+      ),
       `TKT ISSUED / OK`,
     ];
+
+    const itrData = buildItrReceiptData(updated, ticketSalesDatabase);
 
     return {
       output: outputLines.join('\n'),
       updatedSession: updated,
+      isTtp: true,
+      itrData: itrData || undefined,
     };
   }
 
@@ -1667,7 +1712,7 @@ const executeSingleGdsCommand = (
     return {
       output: formattedOutput,
       updatedSession: currentSession,
-      triggerPrint: true,
+      isItr: true,
       itrData,
     };
   }

@@ -196,6 +196,8 @@ export interface ItrPassengerDetail {
   paxType: 'ADT' | 'CHD' | 'INF' | string;
   ticketNumber: string;
   couponStatus?: string;
+  foid?: string;
+  frequentFlyer?: string;
 }
 
 export interface ItrBaggageAllowance {
@@ -250,6 +252,7 @@ export interface TerminalOutputItem {
   content: string;
   rawHtml?: boolean;
   isItr?: boolean;
+  isTtp?: boolean;
   itrData?: ItrReceiptData;
 }
 

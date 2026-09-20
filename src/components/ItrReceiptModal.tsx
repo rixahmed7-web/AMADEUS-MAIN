@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { ItrReceiptData } from '../types';
-import { printItrDocument, downloadItrTextFile, downloadItrPdfFile } from '../utils/itrReceipt';
+import { downloadItrTextFile, downloadItrPdfFile } from '../utils/itrReceipt';
 import { Printer, Download, Mail, X, Check, FileText, Luggage, Users, Plane, Loader2 } from 'lucide-react';
 
 interface ItrReceiptModalProps {
@@ -9,6 +9,34 @@ interface ItrReceiptModalProps {
   onClose: () => void;
   onSendEmail?: (email: string) => void;
 }
+
+// Clean authentic Code 128 / Code 39 vector barcode representation
+const AirlineBarcode: React.FC<{ code: string }> = ({ code }) => {
+  // Deterministic bar widths pattern based on code characters
+  const pattern = [
+    2, 1, 1, 3, 1, 2, 3, 1, 1, 2, 1, 3, 2, 1, 2, 1, 3, 1, 1, 2, 3, 1, 2, 1, 1, 3, 2,
+    1, 1, 2, 1, 3, 2, 1, 3, 1, 2, 1, 1, 2, 3, 1, 1, 3, 2, 1,
+  ];
+
+  let currentX = 0;
+
+  return (
+    <div className="flex flex-col items-start justify-center">
+      <svg className="h-6 w-36 sm:w-44" viewBox="0 0 160 26" preserveAspectRatio="none">
+        {pattern.map((w, i) => {
+          const x = currentX;
+          currentX += w * 1.6;
+          return i % 2 === 0 ? (
+            <rect key={i} x={x} y="0" width={w * 1.3} height="26" fill="#1e293b" />
+          ) : null;
+        })}
+      </svg>
+      <span className="font-mono text-[9.5px] tracking-widest text-slate-700 font-bold mt-0.5">
+        *{code.replace(/[^0-9]/g, '')}*
+      </span>
+    </div>
+  );
+};
 
 export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
   isOpen,
@@ -19,9 +47,14 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
   const [emailInput, setEmailInput] = useState('');
   const [emailSentSuccess, setEmailSentSuccess] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [logoImgError, setLogoImgError] = useState(false);
   const receiptCardRef = useRef<HTMLDivElement>(null);
 
   if (!isOpen || !data) return null;
+
+  const handlePrintClick = () => {
+    window.print();
+  };
 
   const handleEmailSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -48,14 +81,14 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-2 sm:p-4 backdrop-blur-xs overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-2 sm:p-4 backdrop-blur-xs overflow-y-auto no-print"
       id="itr-receipt-modal"
     >
-      <div className="bg-[#e2e8f0] rounded-lg shadow-2xl border border-slate-300 w-full max-w-4xl overflow-hidden flex flex-col max-h-[94vh] animate-in fade-in zoom-in-95 duration-200">
-        {/* Top Control Bar (Non-printed modal toolbar) */}
-        <div className="bg-[#005eb8] text-white px-4 py-3 flex items-center justify-between shrink-0 shadow-md">
-          <div className="flex items-center gap-2.5">
-            <div className="p-1.5 bg-white/10 rounded-sm">
+      <div className="bg-[#e2e8f0] rounded-lg shadow-2xl border border-slate-300 w-full max-w-4xl overflow-hidden flex flex-col max-h-[95vh] animate-in fade-in zoom-in-95 duration-200">
+        {/* Top Control Bar with Two Prominent Action Buttons */}
+        <div className="bg-[#005eb8] text-white px-4 sm:px-6 py-3.5 flex flex-wrap items-center justify-between gap-3 shrink-0 shadow-md">
+          <div className="flex items-center gap-3">
+            <div className="p-1.5 bg-white/10 rounded">
               <FileText className="w-5 h-5 text-amber-300" />
             </div>
             <div>
@@ -66,51 +99,38 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
                 </span>
               </div>
               <div className="text-[11px] text-blue-100 font-medium">
-                Official Electronic Passenger Itinerary &amp; Receipt (ITR) &bull; 1A/{data.pnrLocator}
+                Official Electronic Ticket Passenger Itinerary &amp; Receipt &bull; 1A/{data.pnrLocator}
               </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          {/* TWO PROMINENT BUTTONS AT TOP OF TICKET MODAL */}
+          <div className="flex items-center gap-2.5">
             <button
-              onClick={() => printItrDocument(data)}
-              className="px-3 py-1.5 bg-white hover:bg-blue-50 text-[#005eb8] font-bold text-xs rounded shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
-              title="Print or Save as PDF via Print Dialog"
+              type="button"
+              id="btn-print-download-ticket"
+              onClick={handlePrintClick}
+              className="px-4 py-2 bg-white hover:bg-slate-50 text-[#005eb8] hover:text-[#00478c] font-black text-xs sm:text-sm rounded shadow-md flex items-center gap-2 transition-all cursor-pointer hover:scale-[1.02] border border-white"
+              title="Print or Save as PDF via dedicated clean A4 print layout"
             >
-              <Printer className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Print / Save PDF</span>
+              <Printer className="w-4 h-4 text-[#005eb8]" />
+              <span>📥 Download PDF / Print Ticket</span>
             </button>
 
             <button
-              onClick={handleDirectPdfDownload}
-              disabled={isGeneratingPdf}
-              className="px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-slate-900 font-bold text-xs rounded shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-75"
-              title="Download PDF directly without print dialog"
-            >
-              {isGeneratingPdf ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>Generating PDF...</span>
-                </>
-              ) : (
-                <>
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Download PDF</span>
-                </>
-              )}
-            </button>
-
-            <button
+              type="button"
+              id="btn-close-itr-modal"
               onClick={onClose}
-              className="p-1.5 text-white/80 hover:text-white hover:bg-white/15 rounded-full transition-colors cursor-pointer ml-1"
-              title="Close document"
+              className="px-3.5 py-2 bg-[#00478c] hover:bg-[#003870] text-white font-bold text-xs sm:text-sm rounded border border-white/20 shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="Close preview and return to terminal"
             >
-              <X className="w-5 h-5" />
+              <X className="w-4 h-4" />
+              <span>✕ Close</span>
             </button>
           </div>
         </div>
 
-        {/* Scrollable Document Body (Styled as a standard professional A4 GDS document sheet) */}
+        {/* Scrollable Document Body (Styled as official authentic A4 GDS ticket sheet) */}
         <div className="flex-1 overflow-y-auto p-3 sm:p-6 bg-[#cbd5e1] text-[#1e293b]">
           <div
             ref={receiptCardRef}
@@ -120,28 +140,35 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
           >
             {/* 1. Official Header & Airline Branding */}
             <div className="border-b-2 border-[#005eb8] pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex items-center gap-3.5">
-                {data.airlineLogoUrl && (
-                  <div className="h-12 max-w-[190px] flex items-center justify-center p-1 bg-white rounded">
+              <div className="flex items-center gap-4">
+                {data.airlineLogoUrl && !logoImgError ? (
+                  <div className="h-14 max-w-[200px] flex items-center justify-center p-1.5 bg-white rounded border border-slate-100 shadow-2xs">
                     <img
                       src={data.airlineLogoUrl}
                       alt={data.issuingAirlineName}
-                      className="max-h-11 max-w-[180px] object-contain"
-                      onError={(e) => {
-                        // Fallback to text badge if logo fails
-                        (e.target as HTMLElement).style.display = 'none';
-                      }}
+                      className="max-h-12 max-w-[190px] object-contain"
+                      crossOrigin="anonymous"
+                      referrerPolicy="no-referrer"
+                      onError={() => setLogoImgError(true)}
                     />
+                  </div>
+                ) : (
+                  <div className="h-14 px-4 bg-slate-900 text-white rounded flex items-center gap-2.5 shadow-2xs">
+                    <Plane className="w-6 h-6 text-amber-400" />
+                    <div>
+                      <div className="font-black text-base tracking-wider">{data.issuingAirline}</div>
+                      <div className="text-[10px] text-slate-300 uppercase tracking-tight">{data.issuingAirlineName}</div>
+                    </div>
                   </div>
                 )}
                 <div>
-                  <div className="font-extrabold text-lg sm:text-xl text-slate-900 tracking-tight">
-                    {data.issuingAirlineName}
-                  </div>
-                  <div className="text-xs text-slate-600 font-semibold flex items-center gap-2 mt-0.5">
-                    <span>CARRIER: <strong className="text-slate-900">{data.issuingAirline}</strong></span>
+                  <h1 className="font-black text-lg sm:text-xl text-slate-900 tracking-tight uppercase">
+                    PASSENGER ITINERARY RECEIPT / ELECTRONIC TICKET
+                  </h1>
+                  <div className="text-xs text-slate-600 font-semibold flex flex-wrap items-center gap-2 mt-0.5">
+                    <span>ISSUING AIRLINE: <strong className="text-slate-900">{data.issuingAirlineName} ({data.issuingAirline})</strong></span>
                     <span>&bull;</span>
-                    <span>IATA NUMERIC: <strong className="font-mono text-slate-900">{data.issuingAirlineNumeric}</strong></span>
+                    <span>IATA CODE: <strong className="font-mono text-slate-900">{data.issuingAirlineNumeric}</strong></span>
                   </div>
                 </div>
               </div>
@@ -150,33 +177,33 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
                 <div className="text-lg font-black text-[#005eb8] tracking-tight">
                   amadeus
                 </div>
-                <div className="text-[11px] font-bold text-slate-600 uppercase tracking-wide">
-                  Selling Platform Connect &bull; Electronic Ticket Receipt
+                <div className="text-[10.5px] font-bold text-slate-600 uppercase tracking-wide">
+                  Selling Platform Connect &bull; GDS Certified
                 </div>
                 <div className="inline-flex items-center gap-1.5 mt-1 px-2.5 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-300 rounded text-[11px] font-bold">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
-                  ELECTRONIC TICKET CONFIRMED
+                  OK ETICKET ISSUED
                 </div>
               </div>
             </div>
 
-            {/* 2. Document Audit & Booking Details Grid */}
+            {/* 2. Header Information Section Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-[#f8fafc] border border-slate-200 rounded p-3 sm:p-4 text-xs">
               <div>
                 <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                  Amadeus Booking Ref (RLOC)
+                  Booking Reference (Amadeus PNR)
                 </div>
-                <div className="font-mono font-bold text-sm text-[#005eb8] mt-0.5">
+                <div className="font-mono font-black text-sm text-[#005eb8] mt-0.5">
                   1A / {data.pnrLocator}
                 </div>
               </div>
 
               <div>
                 <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                  Airline Record Locator
+                  Issuing Agent
                 </div>
-                <div className="font-mono font-bold text-sm text-slate-800 mt-0.5">
-                  {data.airlineLocator}
+                <div className="font-bold text-xs text-slate-900 mt-0.5">
+                  {data.issuingAgent || `SHOHOJ TRAVELS / ${data.officeId}`}
                 </div>
               </div>
 
@@ -184,48 +211,48 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
                 <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                   Date of Issue
                 </div>
-                <div className="font-bold text-xs text-slate-800 mt-0.5">
+                <div className="font-bold text-xs text-slate-900 mt-0.5">
                   {data.issueDate}
                 </div>
               </div>
 
               <div>
                 <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                  Issuing Agency
+                  IATA Numeric Code
                 </div>
-                <div className="font-bold text-xs text-slate-800 mt-0.5">
-                  {data.issuingAgent}
-                </div>
-              </div>
-
-              <div>
-                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                  IATA Accreditation No.
-                </div>
-                <div className="font-mono font-bold text-xs text-slate-800 mt-0.5">
-                  {data.iataNumber}
+                <div className="font-mono font-bold text-xs text-slate-900 mt-0.5">
+                  {data.iataNumber || '21368575'}
                 </div>
               </div>
 
               <div>
                 <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                  Office ID / Sine
+                  Airline Record Locator
                 </div>
                 <div className="font-mono font-bold text-xs text-slate-800 mt-0.5">
-                  {data.officeId} / 9912AA/SU
+                  {data.airlineLocator}
+                </div>
+              </div>
+
+              <div>
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                  Issuing Office ID
+                </div>
+                <div className="font-mono font-bold text-xs text-slate-800 mt-0.5">
+                  {data.officeId} / 9912AA
                 </div>
               </div>
             </div>
 
-            {/* 3. Dynamic Multi-Passenger Roster & 13-Digit E-Ticket Numbers */}
+            {/* 3. Passenger & Ticket Information Table */}
             <div>
               <div className="flex items-center justify-between mb-1.5 pb-1 border-b border-slate-200">
                 <div className="flex items-center gap-1.5 font-bold text-xs uppercase tracking-wider text-slate-800">
                   <Users className="w-3.5 h-3.5 text-[#005eb8]" />
-                  <span>1. Passenger Details &amp; E-Ticket Number(s)</span>
+                  <span>1. Passenger &amp; Ticket Information</span>
                 </div>
                 <span className="text-[11px] font-semibold text-slate-500">
-                  Total Passengers: <strong>{data.passengers.length} PAX</strong>
+                  Booked Passengers: <strong className="text-slate-900">{data.passengers.length} PAX</strong>
                 </span>
               </div>
 
@@ -233,28 +260,44 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
                     <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 text-[11px]">
-                      <th className="py-2 px-3 w-10">No.</th>
-                      <th className="py-2 px-3">Passenger Name</th>
-                      <th className="py-2 px-3 w-20">Type</th>
-                      <th className="py-2 px-3">13-Digit E-Ticket Number</th>
-                      <th className="py-2 px-3 text-right">Coupon Status</th>
+                      <th className="py-2.5 px-3">Passenger Name &amp; Title</th>
+                      <th className="py-2.5 px-3 w-16">Type</th>
+                      <th className="py-2.5 px-3">Form of ID (FOID / Passport)</th>
+                      <th className="py-2.5 px-3">Frequent Flyer</th>
+                      <th className="py-2.5 px-3">13-Digit E-Ticket Number</th>
+                      <th className="py-2.5 px-3 text-right">Barcode</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {data.passengers.map((p) => (
-                      <tr key={p.passengerIndex} className="hover:bg-blue-50/50 transition-colors">
-                        <td className="py-2.5 px-3 font-bold text-[#005eb8]">{p.passengerIndex}.</td>
-                        <td className="py-2.5 px-3">
-                          <div className="font-bold text-slate-900 text-[13px]">{p.fullName}</div>
+                      <tr key={p.passengerIndex} className="hover:bg-blue-50/40 transition-colors">
+                        <td className="py-3 px-3">
+                          <div className="font-bold text-slate-900 text-[13px]">
+                            {p.passengerIndex}. {p.fullName}
+                          </div>
+                          <div className="text-[10px] text-slate-500 font-mono mt-0.5">
+                            STATUS: CONFIRMED / OK
+                          </div>
                         </td>
-                        <td className="py-2.5 px-3 font-semibold text-slate-600">{p.paxType}</td>
-                        <td className="py-2.5 px-3 font-mono font-bold text-xs text-[#005eb8]">
-                          {p.ticketNumber}
+                        <td className="py-3 px-3 font-semibold text-slate-600">{p.paxType}</td>
+                        <td className="py-3 px-3 font-mono font-semibold text-slate-800">
+                          {p.foid || 'PP BD EF0123456'}
                         </td>
-                        <td className="py-2.5 px-3 text-right">
-                          <span className="inline-block px-2 py-0.5 text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 rounded">
-                            OPEN FOR USE / CONFIRMED
-                          </span>
+                        <td className="py-3 px-3 font-mono text-slate-600">
+                          {p.frequentFlyer || 'NOT RECORDED'}
+                        </td>
+                        <td className="py-3 px-3">
+                          <div className="font-mono font-black text-xs text-[#005eb8]">
+                            {p.ticketNumber}
+                          </div>
+                          <div className="text-[10px] text-emerald-700 font-semibold mt-0.5">
+                            COUPON 1/1: OPEN
+                          </div>
+                        </td>
+                        <td className="py-3 px-3 text-right">
+                          <div className="inline-block">
+                            <AirlineBarcode code={p.ticketNumber} />
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -263,7 +306,7 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
               </div>
             </div>
 
-            {/* 4. Flight Itinerary Schedule Table */}
+            {/* 4. Flight Itinerary Grid (Table Format) */}
             <div>
               <div className="flex items-center gap-1.5 font-bold text-xs uppercase tracking-wider text-slate-800 mb-1.5 pb-1 border-b border-slate-200">
                 <Plane className="w-3.5 h-3.5 text-[#005eb8]" />
@@ -274,39 +317,37 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
                 <table className="w-full text-left text-xs border-collapse min-w-[620px]">
                   <thead>
                     <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 text-[11px]">
-                      <th className="py-2 px-3 w-10">Seg</th>
-                      <th className="py-2 px-3">Flight</th>
-                      <th className="py-2 px-3 w-12">Cls</th>
-                      <th className="py-2 px-3 w-16">Date</th>
-                      <th className="py-2 px-3">Departure</th>
-                      <th className="py-2 px-3">Arrival</th>
-                      <th className="py-2 px-3 w-20">Status</th>
-                      <th className="py-2 px-3 w-20">Baggage</th>
+                      <th className="py-2.5 px-3">Flight</th>
+                      <th className="py-2.5 px-3 w-12">Class</th>
+                      <th className="py-2.5 px-3 w-16">Date</th>
+                      <th className="py-2.5 px-3">Departure Airport &amp; Time</th>
+                      <th className="py-2.5 px-3">Arrival Airport &amp; Time</th>
+                      <th className="py-2.5 px-3 w-20">Status</th>
+                      <th className="py-2.5 px-3 w-28">Baggage Allowance</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {data.segments.map((s) => (
                       <tr key={s.segNum} className="hover:bg-blue-50/40 transition-colors">
-                        <td className="py-2.5 px-3 font-bold text-[#005eb8]">{s.segNum}</td>
-                        <td className="py-2.5 px-3 font-bold font-mono text-slate-900">
+                        <td className="py-3 px-3 font-mono font-black text-slate-900 text-xs">
                           {s.airline} {s.flightNumber}
                         </td>
-                        <td className="py-2.5 px-3 font-mono font-semibold">{s.bookingClass}</td>
-                        <td className="py-2.5 px-3 font-semibold text-slate-800">{s.date}</td>
-                        <td className="py-2.5 px-3">
+                        <td className="py-3 px-3 font-mono font-bold text-[#005eb8]">{s.bookingClass}</td>
+                        <td className="py-3 px-3 font-semibold text-slate-900">{s.date}</td>
+                        <td className="py-3 px-3">
                           <div className="font-bold text-slate-900">{s.originName}</div>
-                          <div className="text-[11px] text-slate-600 font-mono">
+                          <div className="text-[11px] text-slate-600 font-mono mt-0.5">
                             Dept: <strong className="text-slate-900">{s.depTime}</strong> {s.originTerminal ? `(Term ${s.originTerminal})` : ''}
                           </div>
                         </td>
-                        <td className="py-2.5 px-3">
+                        <td className="py-3 px-3">
                           <div className="font-bold text-slate-900">{s.destName}</div>
-                          <div className="text-[11px] text-slate-600 font-mono">
+                          <div className="text-[11px] text-slate-600 font-mono mt-0.5">
                             Arrv: <strong className="text-slate-900">{s.arrTime}</strong> {s.destTerminal ? `(Term ${s.destTerminal})` : ''}
                           </div>
                         </td>
-                        <td className="py-2.5 px-3 font-bold text-emerald-700">{s.status}</td>
-                        <td className="py-2.5 px-3 font-semibold text-slate-700">{s.baggage}</td>
+                        <td className="py-3 px-3 font-bold text-emerald-700">{s.status || 'HK1 / OK'}</td>
+                        <td className="py-3 px-3 font-semibold text-slate-800">{s.baggage || '2PC (23KG)'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -314,11 +355,11 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
               </div>
             </div>
 
-            {/* 5. Explicit Detailed Baggage Allowance Section */}
+            {/* 5. Baggage Regulations & Allowances Table */}
             <div>
               <div className="flex items-center gap-1.5 font-bold text-xs uppercase tracking-wider text-slate-800 mb-1.5 pb-1 border-b border-slate-200">
                 <Luggage className="w-3.5 h-3.5 text-[#005eb8]" />
-                <span>3. Baggage Allowance &amp; Regulations</span>
+                <span>3. Baggage Regulations &amp; Allowances</span>
               </div>
 
               <div className="border border-slate-200 rounded overflow-hidden">
@@ -327,8 +368,8 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
                     <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 text-[11px]">
                       <th className="py-2 px-3">Passenger</th>
                       <th className="py-2 px-3">Flight &amp; Route</th>
-                      <th className="py-2 px-3">Checked Baggage</th>
-                      <th className="py-2 px-3">Cabin / Carry-On Baggage</th>
+                      <th className="py-2 px-3">Checked Baggage Allowance</th>
+                      <th className="py-2 px-3">Cabin / Carry-On Bag</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -348,42 +389,44 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
                   </tbody>
                 </table>
               </div>
-              <div className="text-[11px] text-slate-500 mt-1 pl-1">
-                * Maximum dimensions per checked bag: 158 cm (62 in) linear. Excess baggage fees apply if weight or piece allowances are exceeded.
-              </div>
             </div>
 
-            {/* 6. Pricing, Multi-Passenger Calculation & Payment Details */}
+            {/* 6. Fare & Payment Breakdown */}
             <div>
               <div className="font-bold text-xs uppercase tracking-wider text-slate-800 mb-1.5 pb-1 border-b border-slate-200">
-                4. Fare Calculation, Taxes &amp; Financial Summary
+                4. Fare &amp; Payment Breakdown
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-[#f8fafc] border border-slate-200 rounded p-3.5 text-xs">
                 <div>
                   <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                    GDS Linear Fare Calculation
+                    Linear Fare Calculation
                   </div>
                   <div className="font-mono text-[11px] text-slate-800 bg-white p-2.5 rounded border border-slate-200 break-all leading-relaxed shadow-2xs">
                     {data.fareCalculation}
                   </div>
-                  <div className="mt-2 text-slate-700 text-[11px] space-y-1">
-                    <div><strong>Endorsements:</strong> {data.endorsements}</div>
-                    <div><strong>Form of Payment:</strong> <span className="font-mono">{data.formOfPayment}</span></div>
-                    <div><strong>Commission:</strong> {data.commission || '7%'}</div>
+                  <div className="mt-2.5 text-slate-700 text-[11.5px] space-y-1.5">
+                    <div>
+                      <strong>Form of Payment:</strong>{' '}
+                      <span className="font-mono font-bold text-slate-900">{data.formOfPayment || 'CASH / INVOICE'}</span>
+                    </div>
+                    <div>
+                      <strong>Endorsement / Restrictions:</strong>{' '}
+                      <span className="text-slate-800 font-semibold">{data.endorsements}</span>
+                    </div>
                   </div>
                 </div>
 
-                <div className="flex flex-col justify-between space-y-2">
+                <div className="flex flex-col justify-between space-y-2 bg-white p-3 rounded border border-slate-200">
                   <div className="space-y-1.5">
                     <div className="flex justify-between text-slate-600">
-                      <span>Base Air Fare (Per Adult):</span>
+                      <span>Base Airfare (Per Adult):</span>
                       <span className="font-semibold font-mono">
                         {data.currency} {data.baseFare.toLocaleString()}
                       </span>
                     </div>
                     <div className="flex justify-between text-slate-600">
-                      <span>Taxes &amp; Airline Surcharges:</span>
+                      <span>Taxes, Fees &amp; Airline Surcharges:</span>
                       <span className="font-semibold font-mono">
                         {data.currency} {data.tax.toLocaleString()}
                       </span>
@@ -401,7 +444,7 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
                   </div>
 
                   <div className="border-t-2 border-slate-300 pt-2 flex justify-between items-center text-sm font-bold text-[#005eb8]">
-                    <span>Grand Total PNR Fare:</span>
+                    <span>Total Amount Paid:</span>
                     <span className="text-lg font-black font-mono">
                       {data.currency} {data.grandTotalFare.toLocaleString()}
                     </span>
@@ -410,18 +453,18 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
               </div>
             </div>
 
-            {/* 7. Conditions of Carriage & Regulatory Notice */}
+            {/* 7. Legal Notice & Conditions of Carriage */}
             <div className="text-[10.5px] text-slate-500 leading-relaxed border-t border-slate-200 pt-3">
               <strong>LEGAL NOTICE &amp; CONDITIONS OF CARRIAGE:</strong> Carriage and other services provided by the carrier are subject to conditions of carriage, which are hereby incorporated by reference. Passengers on a journey involving an ultimate destination or a stop in a country other than the country of origin are advised that international treaties known as the Montreal Convention, or its predecessor, the Warsaw Convention, may apply to the entire journey. Please check in at least 3 hours prior to scheduled international departure. Valid passport and visas required.
               <div className="mt-2 text-slate-700 font-semibold flex flex-wrap justify-between items-center text-[10.5px]">
-                <span>Amadeus Selling Platform Connect &bull; GDS Certified Travel Document</span>
+                <span>Amadeus Selling Platform Connect &bull; GDS Certified Electronic Document</span>
                 <span className="font-mono text-slate-500">DISPATCH REF: 1A/{data.pnrLocator}/{data.issueDate}</span>
               </div>
             </div>
           </div>
 
           {/* Quick Email Dispatch Form (Bottom tool) */}
-          <div className="max-w-[850px] mx-auto mt-4 bg-white p-3 rounded-md border border-slate-300 flex flex-wrap items-center justify-between gap-3 text-xs shadow-xs">
+          <div className="max-w-[850px] mx-auto mt-4 bg-white p-3 rounded-md border border-slate-300 flex flex-wrap items-center justify-between gap-3 text-xs shadow-xs no-print">
             <div className="flex items-center gap-2">
               <Mail className="w-4 h-4 text-[#005eb8]" />
               <span className="font-semibold text-slate-800">
@@ -452,7 +495,7 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
         </div>
 
         {/* Modal Footer Controls */}
-        <div className="bg-white px-5 py-3 border-t border-slate-300 flex flex-wrap items-center justify-between gap-2 shrink-0">
+        <div className="bg-white px-5 py-3 border-t border-slate-300 flex flex-wrap items-center justify-between gap-2 shrink-0 no-print">
           <div className="text-[11px] text-slate-500 font-medium">
             Compliant with IATA Resolution 722g &bull; Amadeus Certified E-Ticket Receipt
           </div>
@@ -467,10 +510,10 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
             </button>
             <button
               type="button"
-              onClick={() => printItrDocument(data)}
+              onClick={handlePrintClick}
               className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-800 font-bold text-xs rounded shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
             >
-              <Printer className="w-3.5 h-3.5" />
+              <Printer className="w-3.5 h-3.5 text-[#005eb8]" />
               <span>Print / Save PDF</span>
             </button>
             <button

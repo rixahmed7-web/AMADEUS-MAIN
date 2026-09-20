@@ -341,89 +341,55 @@ export const TerminalArea: React.FC<TerminalAreaProps> = ({
               </div>
             ) : (
               <div className="pl-0">
-                {(item.isItr || item.content.includes('AMADEUS PASSENGER ITINERARY / RECEIPT')) && (
+                {renderFormattedOutput(item.content)}
+
+                {(item.isTtp || item.isItr || item.content.includes('OK ETICKET ISSUED') || item.content.includes('FA PAX') || item.content.includes('AMADEUS PASSENGER ITINERARY / RECEIPT')) && (
                   <div
-                    id={`itr-receipt-action-card-${item.id}`}
-                    className="bg-[#f0f6ff] border border-[#005eb8]/30 rounded-[4px] px-3.5 py-2.5 my-2.5 flex flex-wrap items-center justify-between gap-2 shadow-2xs font-sans"
+                    id={`itr-receipt-action-bar-${item.id}`}
+                    className="bg-blue-50/90 border-2 border-[#005eb8]/40 rounded-md px-4 py-3 my-3 flex flex-wrap items-center justify-between gap-3 shadow-sm font-sans animate-in fade-in duration-200"
                   >
-                    <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block animate-pulse shrink-0" />
-                      <span className="text-xs font-bold text-[#005eb8]">
-                        Amadeus Electronic Ticket Passenger Itinerary &amp; Receipt (ITR)
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <button
+                        type="button"
+                        id={`btn-view-download-eticket-${item.id}`}
+                        onClick={() => {
+                          if (onOpenItrModal && item.itrData) {
+                            onOpenItrModal(item.itrData);
+                          }
+                        }}
+                        className="px-4 py-2 bg-[#005eb8] hover:bg-[#00478c] text-white text-xs sm:text-sm font-bold rounded shadow flex items-center gap-2 transition-all cursor-pointer hover:scale-[1.01]"
+                        title="Open authentic airline Electronic Ticket Receipt (ITR)"
+                      >
+                        <FileText className="w-4 h-4" />
+                        <span>📄 View &amp; Download E-Ticket / ITR</span>
+                      </button>
+
+                      <span className="text-xs text-slate-700 font-medium">
+                        (You can also type <code className="font-mono font-bold text-[#005eb8] bg-white px-1.5 py-0.5 rounded border border-blue-200">&apos;ITR&apos;</code> to open ticket anytime)
                       </span>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-wrap text-xs">
                       {item.itrData?.ticketNumber && (
-                        <span className="text-[11px] font-mono bg-white px-2 py-0.5 rounded border border-blue-200 text-slate-700 font-semibold">
+                        <span className="font-mono text-xs bg-white px-2.5 py-1 rounded border border-blue-300 text-slate-800 font-bold shadow-2xs">
                           TKT: {item.itrData.ticketNumber}
                         </span>
                       )}
-                    </div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <button
-                        type="button"
-                        id={`btn-download-pdf-${item.id}`}
-                        onClick={() => handleDownloadPdf(item)}
-                        disabled={pdfLoadingId === item.id}
-                        className="px-3 py-1.5 bg-[#005eb8] hover:bg-[#00478c] text-white text-xs font-bold rounded-[3px] flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer disabled:opacity-75"
-                        title="Directly Download PDF Document without print dialog"
-                      >
-                        {pdfLoadingId === item.id ? (
-                          <>
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            <span>Downloading PDF...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Download className="w-3.5 h-3.5" />
-                            <span>📥 Download Itinerary Receipt</span>
-                          </>
-                        )}
-                      </button>
-
-                      <button
-                        type="button"
-                        id={`btn-print-itr-${item.id}`}
-                        onClick={() => {
-                          if (item.itrData) {
-                            printItrDocument(item.itrData);
-                          } else if (onPrintItr) {
-                            onPrintItr(item.itrData);
-                          }
-                        }}
-                        className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 text-xs font-semibold rounded-[3px] flex items-center gap-1.5 transition-colors cursor-pointer"
-                        title="Print or Save as PDF via standard print dialog"
-                      >
-                        <Printer className="w-3.5 h-3.5" />
-                        <span>Print / Save PDF</span>
-                      </button>
-
                       {item.itrData && (
                         <button
                           type="button"
-                          id={`btn-download-txt-${item.id}`}
-                          onClick={() => downloadItrTextFile(item.itrData!)}
-                          className="px-2 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 text-xs font-semibold rounded-[3px] flex items-center gap-1 transition-colors cursor-pointer"
-                          title="Download plain text receipt (.txt)"
+                          id={`btn-quick-print-${item.id}`}
+                          onClick={() => printItrDocument(item.itrData!)}
+                          className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 text-xs font-semibold rounded shadow-2xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                          title="Direct Print or Save as PDF"
                         >
-                          <FileText className="w-3 h-3" />
-                          <span>.txt</span>
-                        </button>
-                      )}
-                      {onOpenItrModal && item.itrData && (
-                        <button
-                          type="button"
-                          id={`btn-view-modal-${item.id}`}
-                          onClick={() => onOpenItrModal(item.itrData!)}
-                          className="px-2.5 py-1.5 bg-white hover:bg-blue-50 text-[#005eb8] border border-[#005eb8]/40 text-xs font-semibold rounded-[3px] flex items-center gap-1 transition-colors cursor-pointer"
-                          title="View Official Receipt Document Modal"
-                        >
-                          <FileText className="w-3 h-3" />
-                          <span>View Document</span>
+                          <Printer className="w-3.5 h-3.5 text-[#005eb8]" />
+                          <span>Print</span>
                         </button>
                       )}
                     </div>
                   </div>
                 )}
-                {renderFormattedOutput(item.content)}
               </div>
             )}
           </div>

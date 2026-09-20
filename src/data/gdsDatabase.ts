@@ -65,7 +65,7 @@ export const AIRPORTS: AirportInfo[] = [
   { code: 'MXP', name: 'MALPENSA AIRPORT', city: 'MILAN', country: 'ITALY', countryCode: 'IT' },
   { code: 'DEL', name: 'INDIRA GANDHI INTL', city: 'DELHI', country: 'INDIA', countryCode: 'IN' },
   { code: 'BOM', name: 'CHHATRAPATI SHIVAJI INTL', city: 'MUMBAI', country: 'INDIA', countryCode: 'IN' },
-  { code: 'CCU', name: 'NETAJI SUBHASH CHANDRA INTL', city: 'KOLKATA', country: 'INDIA', countryCode: 'IN' },
+  { code: 'CCU', name: 'NETAJI SUBHASH CHANDRA BOSE INTL', city: 'KOLKATA', country: 'INDIA', countryCode: 'IN' },
   { code: 'MAA', name: 'CHENNAI INTL', city: 'CHENNAI', country: 'INDIA', countryCode: 'IN' },
   { code: 'KWI', name: 'KUWAIT INTL', city: 'KUWAIT', country: 'KUWAIT', countryCode: 'KW' },
   { code: 'BAH', name: 'BAHRAIN INTL', city: 'BAHRAIN', country: 'BAHRAIN', countryCode: 'BH' },

@@ -214,20 +214,25 @@ export default function App() {
       setToastMessage(result.emailSent.message);
     }
 
-    // If ITR was triggered, auto-trigger clean print window and store receipt data
+    // If ITR or TTP produced e-ticket data, update active receipt
     if (result.itrData) {
       setActiveItrData(result.itrData);
     }
 
-    if (result.triggerPrint && result.itrData) {
-      printItrDocument(result.itrData);
+    // If user typed ITR command, directly open the full-screen modal
+    if (result.isItr || /^ITR(?:\s*|\/.*|-L\d+)?$/i.test(cmd.trim())) {
+      if (result.itrData) {
+        setActiveItrData(result.itrData);
+        setIsItrModalOpen(true);
+      }
     }
 
     const responseItem: TerminalOutputItem = {
       id: `res-${Date.now() + 1}`,
       type: 'response',
       content: result.output,
-      isItr: Boolean(result.itrData || result.triggerPrint),
+      isItr: Boolean(result.isItr || result.itrData),
+      isTtp: Boolean(result.isTtp || cmd.trim().toUpperCase().startsWith('TTP')),
       itrData: result.itrData,
     };
 

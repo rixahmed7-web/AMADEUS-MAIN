@@ -1,1 +1,54 @@
 @import "tailwindcss";
+
+/* Dedicated A4 Print Formatting for Official Electronic Ticket Receipt */
+@media print {
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Hide everything on the page except the printable receipt */
+  body * {
+    visibility: hidden !important;
+  }
+
+  #itr-printable-receipt,
+  #itr-printable-receipt * {
+    visibility: visible !important;
+  }
+
+  #itr-printable-receipt {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 8mm 6mm !important;
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    background: #ffffff !important;
+  }
+
+  /* Completely suppress simulator UI, overlays, modals, action bars during printing */
+  .no-print,
+  #amadeus-app-root,
+  #amadeus-app-root > *:not(#itr-receipt-modal),
+  #terminal-prompt-container,
+  #terminal-scroll-area,
+  #status-bar-container,
+  #top-navbar,
+  #action-bar-container {
+    display: none !important;
+  }
+
+  @page {
+    size: A4 portrait;
+    margin: 6mm;
+  }
+}

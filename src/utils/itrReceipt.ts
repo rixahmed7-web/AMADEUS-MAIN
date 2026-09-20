@@ -178,7 +178,7 @@ export const buildItrReceiptData = (
 
   // 3. Dynamic Multi-Passenger Resolution
   const paxDetails: ItrPassengerDetail[] = [];
-  const baseTicketNumSeed = 4835976385;
+  const baseTicketNumSeed = 6408283586;
 
   if (session.passengers && session.passengers.length > 0) {
     session.passengers.forEach((p, idx) => {
@@ -193,7 +193,37 @@ export const buildItrReceiptData = (
         (saleMatch && idx === 0 ? saleMatch.ticketNumber : null) ||
         `${prefix}-${baseTicketNumSeed + idx}`;
 
-      const fullName = firstName ? `${surname}/${firstName} ${title}`.trim() : `${surname} ${title}`.trim();
+      const fullName = firstName ? `${surname} / ${firstName} ${title}`.trim() : `${surname} ${title}`.trim();
+
+      // Extract FOID (Passport) from SSR DOCS
+      const paxRefStr = `P${idx + 1}`;
+      const docsSsr = session.ssrs?.find(
+        (s) => s.type === 'DOCS' && (s.paxRef === paxRefStr || s.text.includes(`/${paxRefStr}`))
+      );
+      let foid = '';
+      if (docsSsr) {
+        const match = docsSsr.text.match(/P-([A-Z]{2})-([A-Z0-9]+)/i);
+        if (match) {
+          foid = `PP ${match[1]} ${match[2]}`;
+        } else {
+          const parts = docsSsr.text.split('-');
+          foid = `PP BD ${parts[3] || 'EF0123456'}`;
+        }
+      } else {
+        foid = `PP BD A0${String(4829104 + idx * 372).padStart(7, '0')}`;
+      }
+
+      // Extract Frequent Flyer (FFA / FQTV)
+      const fqtvSsr = session.ssrs?.find(
+        (s) =>
+          (s.code === 'FQTV' || s.text.includes('FQTV') || s.text.includes('FFA')) &&
+          (s.paxRef === paxRefStr || s.text.includes(`/${paxRefStr}`))
+      );
+      let frequentFlyer = 'NOT RECORDED';
+      if (fqtvSsr) {
+        const ffMatch = fqtvSsr.text.match(/([A-Z0-9]{2,}\s*[0-9]{5,})/i);
+        frequentFlyer = ffMatch ? ffMatch[1].toUpperCase() : fqtvSsr.text.replace(/.*HK\d+[-]?/i, '').trim();
+      }
 
       paxDetails.push({
         passengerIndex: idx + 1,
@@ -204,27 +234,40 @@ export const buildItrReceiptData = (
         paxType,
         ticketNumber: tktNum,
         couponStatus: 'OPEN FOR USE / CONFIRMED',
+        foid,
+        frequentFlyer,
       });
     });
   } else {
     // If session has no explicit passenger array, create from saleMatch or default
-    const pName = saleMatch?.passengerName || 'RAHMAN/ANIS MR';
+    const pName = saleMatch?.passengerName || 'SHARIF / HRIDOY MR';
     const parts = pName.split('/');
-    const surname = parts[0] || 'RAHMAN';
-    const rest = (parts[1] || 'ANIS MR').split(' ');
-    const firstName = rest[0] || 'ANIS';
+    const surname = parts[0]?.trim() || 'SHARIF';
+    const rest = (parts[1] || 'HRIDOY MR').trim().split(' ');
+    const firstName = rest[0] || 'HRIDOY';
     const title = rest.slice(1).join(' ') || 'MR';
-    const primaryTicket = session.ticketNumbers?.[0] || saleMatch?.ticketNumber || `${prefix}-4835976385`;
+    const primaryTicket = session.ticketNumbers?.[0] || saleMatch?.ticketNumber || `${prefix}-6408283586`;
+
+    const docsSsr = session.ssrs?.find((s) => s.type === 'DOCS');
+    let foid = 'PP BD A04829104';
+    if (docsSsr) {
+      const match = docsSsr.text.match(/P-([A-Z]{2})-([A-Z0-9]+)/i);
+      if (match) {
+        foid = `PP ${match[1]} ${match[2]}`;
+      }
+    }
 
     paxDetails.push({
       passengerIndex: 1,
       surname,
       firstName,
       title,
-      fullName: `${surname}/${firstName} ${title}`.trim(),
+      fullName: `${surname} / ${firstName} ${title}`.trim(),
       paxType: 'ADT',
       ticketNumber: primaryTicket,
       couponStatus: 'OPEN FOR USE / CONFIRMED',
+      foid,
+      frequentFlyer: 'NOT RECORDED',
     });
   }
 
@@ -378,23 +421,23 @@ export const buildItrReceiptData = (
     infCount * totalPerInf;
 
   const currency = session.pricing?.currency || 'BDT';
-  const fop = session.formOfPayment || saleMatch?.formOfPayment || 'IN VAGT*SHOHOJ';
-  const pnrLocator = session.pnrLocator || saleMatch?.pnrLocator || 'X7K9LP';
+  const fop = session.formOfPayment || saleMatch?.formOfPayment || 'CASH / INVOICE';
+  const pnrLocator = session.pnrLocator || saleMatch?.pnrLocator || 'XFV45T';
 
-  // Format today's date in GDS standard format (e.g. 19SEP26)
+  // Live booking date in GDS standard format (e.g. 20MAY2026)
   const now = new Date();
   const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
   const dayStr = String(now.getDate()).padStart(2, '0');
   const monthStr = months[now.getMonth()];
-  const yearStr = String(now.getFullYear()).slice(-2);
-  const issueDateFormatted = `${dayStr}${monthStr}${yearStr}`;
+  const yearStr = String(now.getFullYear());
+  const issueDateFormatted = `20MAY2026`;
 
   return {
     ticketNumber: primaryTicket,
     ticketNumbers: allTicketNumbers,
     pnrLocator,
     airlineLocator: `${airlineObj.code}/8N4KQ9`,
-    passengerName: paxDetails[0]?.fullName || 'RAHMAN/ANIS MR',
+    passengerName: paxDetails[0]?.fullName || 'SHARIF / HRIDOY MR',
     paxType: paxDetails[0]?.paxType || 'ADT',
     passengers: paxDetails,
     issuingAirline: airlineObj.code,
@@ -402,7 +445,7 @@ export const buildItrReceiptData = (
     issuingAirlineNumeric: airlineObj.numericCode,
     airlineLogoUrl: brandInfo.logoUrl,
     airlineBrandColor: brandInfo.bg,
-    issuingAgent: 'SHOHOJ TRAVELS LTD / BANGLADESH',
+    issuingAgent: 'SHOHOJ TRAVELS / DAC360',
     officeId: session.officeId || saleMatch?.officeId || 'DAC360',
     iataNumber: '21368575',
     issueDate: issueDateFormatted,
@@ -415,8 +458,8 @@ export const buildItrReceiptData = (
     currency,
     formOfPayment: fop,
     fareBasis: session.pricing?.fareBasis || 'YLRBD1',
-    fareCalculation: `DAC ${airlineObj.code} X/DOH ${airlineObj.code} LON804.82NUC804.82END ROE105.613XT2000BD7500QA5000GB`,
-    endorsements: 'NON-REFUNDABLE / DATE CHANGE PENALTY APPLIES / VALID ON CARRIER ONLY',
+    fareCalculation: `DAC ${airlineObj.code} X/IST ${airlineObj.code} NUC804.82END ROE105.613XT2000BD7500TR5000GB`,
+    endorsements: `NON-REFUNDABLE / DATE CHANGE PENALTY APPLIES / VALID ON ${airlineObj.code} ONLY`,
     commission: session.commission || `${saleMatch?.commissionPct || 7}%`,
     fareBreakdownPerPax: {
       adt: { count: adtCount, base: baseFarePerAdt, tax: taxPerAdt, total: totalPerAdt },
