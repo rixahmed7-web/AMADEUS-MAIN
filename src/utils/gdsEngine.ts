@@ -478,6 +478,7 @@ const executeSingleGdsCommand = (
       status: paxStatus,
       depTime: flt.depTime,
       arrTime: flt.arrTime,
+      equip: flt.equip,
     }));
 
     const updatedPricing = {
@@ -606,6 +607,7 @@ const executeSingleGdsCommand = (
       status: `HK${seats}`,
       depTime: flightOpt.flight1.depTime,
       arrTime: flightOpt.flight1.arrTime,
+      equip: flightOpt.flight1.equip,
     };
 
     const newSegments = [...currentSession.segments, seg1];
@@ -623,6 +625,7 @@ const executeSingleGdsCommand = (
         status: `HK${seats}`,
         depTime: flightOpt.flight2.depTime,
         arrTime: flightOpt.flight2.arrTime,
+        equip: flightOpt.flight2.equip,
       };
       newSegments.push(seg2);
       const fCode = flightOpt.flight2.codeshare || `${seg2.airline} ${seg2.flightNumber}`;

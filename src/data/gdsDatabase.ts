@@ -75,7 +75,19 @@ export const AIRPORTS: AirportInfo[] = [
   { code: 'CAN', name: 'BAIYUN INTL', city: 'GUANGZHOU', country: 'CHINA', countryCode: 'CN' },
   { code: 'HKG', name: 'HONG KONG INTL', city: 'HONG KONG', country: 'HONG KONG', countryCode: 'HK' },
   { code: 'NRT', name: 'NARITA INTL', city: 'TOKYO', country: 'JAPAN', countryCode: 'JP' },
+  { code: 'HND', name: 'HANEDA AIRPORT', city: 'TOKYO', country: 'JAPAN', countryCode: 'JP' },
   { code: 'ICN', name: 'INCHEON INTL', city: 'SEOUL', country: 'SOUTH KOREA', countryCode: 'KR' },
+  { code: 'ORD', name: "O'HARE INTL", city: 'CHICAGO', country: 'UNITED STATES', countryCode: 'US' },
+  { code: 'ATL', name: 'HARTSFIELD-JACKSON INTL', city: 'ATLANTA', country: 'UNITED STATES', countryCode: 'US' },
+  { code: 'DFW', name: 'DALLAS/FORT WORTH INTL', city: 'DALLAS', country: 'UNITED STATES', countryCode: 'US' },
+  { code: 'IAH', name: 'GEORGE BUSH INTL', city: 'HOUSTON', country: 'UNITED STATES', countryCode: 'US' },
+  { code: 'LAX', name: 'LOS ANGELES INTL', city: 'LOS ANGELES', country: 'UNITED STATES', countryCode: 'US' },
+  { code: 'SFO', name: 'SAN FRANCISCO INTL', city: 'SAN FRANCISCO', country: 'UNITED STATES', countryCode: 'US' },
+  { code: 'IAD', name: 'WASHINGTON DULLES INTL', city: 'WASHINGTON', country: 'UNITED STATES', countryCode: 'US' },
+  { code: 'YUL', name: 'PIERRE ELLIOTT TRUDEAU INTL', city: 'MONTREAL', country: 'CANADA', countryCode: 'CA' },
+  { code: 'MUC', name: 'MUNICH AIRPORT', city: 'MUNICH', country: 'GERMANY', countryCode: 'DE' },
+  { code: 'CAI', name: 'CAIRO INTL', city: 'CAIRO', country: 'EGYPT', countryCode: 'EG' },
+  { code: 'ADD', name: 'BOLE INTL', city: 'ADDIS ABABA', country: 'ETHIOPIA', countryCode: 'ET' },
 ];
 
 export const AIRLINES: AirlineInfo[] = [
@@ -96,6 +108,7 @@ export const AIRLINES: AirlineInfo[] = [
   { code: 'FZ', numericCode: '141', name: 'FLYDUBAI', country: 'UNITED ARAB EMIRATES' },
   { code: 'G9', numericCode: '514', name: 'AIR ARABIA', country: 'UNITED ARAB EMIRATES' },
   { code: 'MH', numericCode: '232', name: 'MALAYSIA AIRLINES', country: 'MALAYSIA' },
+  { code: 'OD', numericCode: '816', name: 'BATIK AIR MALAYSIA', country: 'MALAYSIA' },
   { code: 'TG', numericCode: '217', name: 'THAI AIRWAYS', country: 'THAILAND' },
   { code: 'AI', numericCode: '098', name: 'AIR INDIA', country: 'INDIA' },
   { code: '6E', numericCode: '312', name: 'INDIGO', country: 'INDIA' },
