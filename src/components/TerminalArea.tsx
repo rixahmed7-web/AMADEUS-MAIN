@@ -135,6 +135,42 @@ export const TerminalArea: React.FC<TerminalAreaProps> = ({
     }
   };
 
+  // Color highlight booking classes according to Amadeus standards:
+  // - Available Seats (9 to 4): Crisp GREEN (#2e7d32)
+  // - Low Availability (3 to 1): AMBER / ORANGE (#ed6c02)
+  // - Closed / Zero Seats (0 or L / C): RED (#d32f2f)
+  const renderClassTokens = (classesStr: string) => {
+    const tokens = classesStr.split(/(\s+)/);
+    return tokens.map((token, tIdx) => {
+      // Matches standard Amadeus class/seat pair: e.g. J9, C7, D4, Y9, L2, K0, L0, C0, etc.
+      const match = token.match(/^([A-Z])([0-9CL])$/i);
+      if (match) {
+        const clsLetter = match[1].toUpperCase();
+        const seatCount = match[2].toUpperCase();
+        let colorClass = 'text-[#2e7d32] font-semibold'; // Available 9 to 4: Crisp Green
+        if (seatCount === '0' || seatCount === 'C' || seatCount === 'L') {
+          colorClass = 'text-[#d32f2f] font-semibold'; // Closed / Zero: Red
+        } else if (['1', '2', '3'].includes(seatCount)) {
+          colorClass = 'text-[#ed6c02] font-semibold'; // Low 3 to 1: Amber / Orange
+        }
+
+        return (
+          <span key={tIdx} className={colorClass}>
+            {clsLetter}{seatCount}
+          </span>
+        );
+      }
+      if (token === 'CLSD' || token === 'CLOSED') {
+        return (
+          <span key={tIdx} className="text-[#d32f2f] font-semibold">
+            {token}
+          </span>
+        );
+      }
+      return <span key={tIdx}>{token}</span>;
+    });
+  };
+
   // Render formatted Amadeus GDS output with authentic styling
   const renderFormattedOutput = (content: string) => {
     const lines = content.split('\n');
@@ -142,24 +178,67 @@ export const TerminalArea: React.FC<TerminalAreaProps> = ({
     return (
       <div className="font-mono text-[13px] leading-[1.38] text-[#111111] whitespace-pre select-text">
         {lines.map((line, idx) => {
-          // Check for availability flight highlights
-          if (line.includes('QR 639') || line.includes('QR 641') || line.includes('BA:QR9709')) {
-            // Enhanced interactive line
+          // 1. Availability Option Main Flight Line (e.g. " 1  BG 039   J9 C9 D9 Y9 B9 M9  DAC RUH  1945 2330  E0/788")
+          const optMatch = line.match(/^(\s*\d{1,2}\s+)([A-Z0-9]{2}\s+\d{1,4}\s+)(.*?)\s{2,}([A-Z]{3}\s+[A-Z]{3}\s+.*)$/);
+          if (optMatch) {
+            const lineNum = parseInt(optMatch[1].trim(), 10);
+            return (
+              <div key={idx} className="group hover:bg-[#f0f6ff] transition-colors py-[1px]">
+                <span
+                  onClick={() => onSelectFlightLine && onSelectFlightLine(lineNum)}
+                  className="text-[#005eb8] font-bold cursor-pointer hover:underline"
+                  title={`Click to sell line ${lineNum} (SS1Y${lineNum})`}
+                >
+                  {optMatch[1]}
+                </span>
+                <span
+                  onClick={() => onSelectFlightLine && onSelectFlightLine(lineNum)}
+                  className="bg-[#005eb8] text-white px-1 py-0.5 rounded-[1px] font-bold cursor-pointer hover:bg-[#00478c] inline-block shadow-2xs mr-2"
+                  title={`Click to sell line ${lineNum} (SS1Y${lineNum})`}
+                >
+                  {optMatch[2].trim()}
+                </span>
+                {optMatch[2].substring(optMatch[2].trim().length)}
+                {renderClassTokens(optMatch[3])}
+                {'  '}
+                <span className="text-[#111111] font-medium">{optMatch[4]}</span>
+              </div>
+            );
+          }
+
+          // 2. Availability Connecting Flight Leg 2 (e.g. "    QR 1164  J9 C9 D9 Y9 B9 M9  DOH RUH  0845 1015  E0/359  09:05")
+          const connMatch = line.match(/^(\s{4})([A-Z0-9]{2}\s+\d{1,4}\s+)(.*?)\s{2,}([A-Z]{3}\s+[A-Z]{3}\s+.*)$/);
+          if (connMatch) {
+            return (
+              <div key={idx} className="group hover:bg-[#f0f6ff] transition-colors py-[1px]">
+                <span>{connMatch[1]}</span>
+                <span className="text-[#1a365d] font-bold inline-block mr-2">
+                  {connMatch[2].trim()}
+                </span>
+                {connMatch[2].substring(connMatch[2].trim().length)}
+                {renderClassTokens(connMatch[3])}
+                {'  '}
+                <span className="text-[#111111] font-medium">{connMatch[4]}</span>
+              </div>
+            );
+          }
+
+          // 3. Availability Classes Second Row (e.g. "            Q9 T9 V9 L9 K9")
+          const subClassMatch = line.match(/^(\s{12})([A-Z0-9\s]{8,45})$/);
+          if (subClassMatch && /[A-Z][0-9CL]/i.test(subClassMatch[2])) {
+            return (
+              <div key={idx} className="group hover:bg-[#f0f6ff] transition-colors py-[1px]">
+                <span>{subClassMatch[1]}</span>
+                {renderClassTokens(subClassMatch[2])}
+              </div>
+            );
+          }
+
+          // 4. BA Codeshare / Flight detail highlighting in DO commands
+          if (line.includes('BA:QR9709')) {
             return (
               <div key={idx} className="group hover:bg-[#f2f7ff] transition-colors py-[1px]">
-                {line.split(/(QR 639|QR 641|BA:QR9709|DO1|DO2)/g).map((segment, sIdx) => {
-                  if (segment === 'QR 639') {
-                    return (
-                      <span
-                        key={sIdx}
-                        onClick={() => onSelectFlightLine && onSelectFlightLine(1)}
-                        className="bg-[#005eb8] text-white px-1 py-0.5 rounded-[1px] font-bold cursor-pointer hover:bg-[#00478c] inline-block shadow-2xs"
-                        title="Click to Sell segment (SS1Y1)"
-                      >
-                        {segment}
-                      </span>
-                    );
-                  }
+                {line.split(/(BA:QR9709)/g).map((segment, sIdx) => {
                   if (segment === 'BA:QR9709') {
                     return (
                       <span key={sIdx} className="text-[#b31412] font-bold">

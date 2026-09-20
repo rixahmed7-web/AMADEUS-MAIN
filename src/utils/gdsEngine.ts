@@ -575,8 +575,8 @@ const executeSingleGdsCommand = (
       };
     }
 
-    // Format A: SS<SEATS><CLASS><LINE> (e.g. SS1Y1, SS2J1)
-    const match = upper.match(/^SS(\d+)([A-Z])(\d+)$/);
+    // Format A: SS<SEATS><CLASS><LINE> (e.g. SS1Y1, SS 1 Y 1, SS2J1)
+    const match = upper.match(/^SS\s*(\d+)\s*([A-Z])\s*(\d+)$/);
     if (!match) {
       return {
         output: 'FORMAT: SS<SEATS><CLASS><LINE> (e.g. SS1Y1 or SS2J1) OR SS <AIRLINE><FLT> <CLASS> <DATE> <PAIR> <STATUS>',
@@ -613,7 +613,7 @@ const executeSingleGdsCommand = (
 
     if (flightOpt.flight2) {
       const seg2: BookedSegment = {
-        segmentNumber: currentSession.segments.length + 2,
+        segmentNumber: newSegments.length + 1,
         airline: flightOpt.flight2.airline,
         flightNumber: flightOpt.flight2.flightNumber,
         bookingClass,

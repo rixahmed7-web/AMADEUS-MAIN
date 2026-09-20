@@ -72,7 +72,7 @@ export const AIRPORTS: AirportInfo[] = [
   { code: 'MCT', name: 'MUSCAT INTL', city: 'MUSCAT', country: 'OMAN', countryCode: 'OM' },
   { code: 'SYD', name: 'KINGSFORD SMITH', city: 'SYDNEY', country: 'AUSTRALIA', countryCode: 'AU' },
   { code: 'MEL', name: 'MELBOURNE AIRPORT', city: 'MELBOURNE', country: 'AUSTRALIA', countryCode: 'AU' },
-  { code: 'CAN', name: 'BAI processes', city: 'GUANGZHOU', country: 'CHINA', countryCode: 'CN' },
+  { code: 'CAN', name: 'BAIYUN INTL', city: 'GUANGZHOU', country: 'CHINA', countryCode: 'CN' },
   { code: 'HKG', name: 'HONG KONG INTL', city: 'HONG KONG', country: 'HONG KONG', countryCode: 'HK' },
   { code: 'NRT', name: 'NARITA INTL', city: 'TOKYO', country: 'JAPAN', countryCode: 'JP' },
   { code: 'ICN', name: 'INCHEON INTL', city: 'SEOUL', country: 'SOUTH KOREA', countryCode: 'KR' },
@@ -82,7 +82,7 @@ export const AIRLINES: AirlineInfo[] = [
   { code: 'QR', numericCode: '157', name: 'QATAR AIRWAYS', country: 'QATAR' },
   { code: 'EK', numericCode: '176', name: 'EMIRATES', country: 'UNITED ARAB EMIRATES' },
   { code: 'BG', numericCode: '997', name: 'BIMAN BANGLADESH AIRLINES', country: 'BANGLADESH' },
-  { code: 'BS', numericCode: '852', name: 'US-BANGLA AIRLINES', country: 'BANGLADESH' },
+  { code: 'BS', numericCode: '779', name: 'US-BANGLA AIRLINES', country: 'BANGLADESH' },
   { code: 'VQ', numericCode: '907', name: 'NOVOAIR', country: 'BANGLADESH' },
   { code: 'J9', numericCode: '202', name: 'JAZEERA AIRWAYS', country: 'KUWAIT' },
   { code: 'BA', numericCode: '125', name: 'BRITISH AIRWAYS', country: 'UNITED KINGDOM' },
@@ -109,6 +109,8 @@ export const AIRLINES: AirlineInfo[] = [
   { code: 'CX', numericCode: '160', name: 'CATHAY PACIFIC', country: 'HONG KONG' },
   { code: 'MS', numericCode: '077', name: 'EGYPTAIR', country: 'EGYPT' },
   { code: 'ET', numericCode: '071', name: 'ETHIOPIAN AIRLINES', country: 'ETHIOPIA' },
+  { code: 'XY', numericCode: '593', name: 'FLYNAS', country: 'SAUDI ARABIA' },
+  { code: '2A', numericCode: '915', name: 'AIR ASTRA', country: 'BANGLADESH' },
 ];
 
 export const COUNTRIES: CountryInfo[] = [

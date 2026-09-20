@@ -35,6 +35,12 @@
     background: #ffffff !important;
   }
 
+  #itr-printable-receipt table,
+  #itr-printable-receipt .instructions-box {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
   /* Completely suppress simulator UI, overlays, modals, action bars during printing */
   .no-print,
   #amadeus-app-root,

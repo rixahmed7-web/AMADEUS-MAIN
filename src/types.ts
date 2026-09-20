@@ -44,6 +44,7 @@ export interface BookedSegment {
   depTime: string;
   arrTime: string;
   dayOfWeek?: number;
+  equip?: string;
 }
 
 export interface Passenger {
@@ -190,11 +191,15 @@ export interface ItrFlightSegment {
 export interface ItrPassengerDetail {
   passengerIndex: number;
   fullName: string;
+  displayName?: string;
   surname: string;
   firstName: string;
   title?: string;
   paxType: 'ADT' | 'CHD' | 'INF' | string;
   ticketNumber: string;
+  fare?: number;
+  taxes?: number;
+  totalAmount?: number;
   couponStatus?: string;
   foid?: string;
   frequentFlyer?: string;
@@ -221,12 +226,17 @@ export interface ItrReceiptData {
   issuingAirline: string;
   issuingAirlineName: string;
   issuingAirlineNumeric: string;
+  airlineSlogan?: string;
+  airlineSloganColor?: string;
   airlineLogoUrl?: string;
   airlineBrandColor?: string;
   issuingAgent: string;
   officeId: string;
   iataNumber: string;
   issueDate: string;
+  formattedIssueDate?: string;
+  routeJourney?: string;
+  journeySubtitle?: string;
   segments: ItrFlightSegment[];
   baggageAllowances: ItrBaggageAllowance[];
   baseFare: number;

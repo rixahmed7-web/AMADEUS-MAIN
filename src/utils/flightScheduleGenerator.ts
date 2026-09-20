@@ -1,13 +1,15 @@
 import { AvailabilityOption, FareSearchOption, FareSearchFlight } from '../types';
 import { AIRPORTS, AIRLINES } from '../data/gdsDatabase';
 
-// Helper to format/clean date string e.g. "D25OCT" -> "25OCT", "25OCT26" -> "25OCT"
+// Helper to format/clean date string e.g. "D30SEP" -> "30SEP", "30SEP26" -> "30SEP"
 export const cleanGdsDate = (rawDate?: string): string => {
-  if (!rawDate) return '25OCT';
+  if (!rawDate) return '30SEP';
   const clean = rawDate.toUpperCase().replace(/^D/, '').trim();
-  const match = clean.match(/^(\d{1,2}[A-Z]{3})/);
-  if (match) return match[1];
-  return clean || '25OCT';
+  const match = clean.match(/^(\d{1,2})([A-Z]{3})/);
+  if (match && MONTHS.includes(match[2])) {
+    return `${match[1].padStart(2, '0')}${match[2]}`;
+  }
+  return clean || '30SEP';
 };
 
 // Recognized GDS 3-letter months
@@ -38,6 +40,7 @@ const AIRLINE_HUBS: Record<string, string[]> = {
   BG: ['DAC', 'CGP', 'ZYL'],
   BS: ['DAC'],
   VQ: ['DAC'],
+  '2A': ['DAC'],
   QR: ['DOH'],
   EK: ['DXB'],
   FZ: ['DXB'],
@@ -45,6 +48,7 @@ const AIRLINE_HUBS: Record<string, string[]> = {
   KU: ['KWI'],
   J9: ['KWI'],
   GF: ['BAH'],
+  XY: ['RUH', 'JED'],
   WY: ['MCT'],
   EY: ['AUH'],
   SQ: ['SIN'],
@@ -74,12 +78,12 @@ const isDirectFlight = (orig: string, dest: string, air: string): boolean => {
 
   // Domestic Bangladesh
   if (isDomesticAirport(o) && isDomesticAirport(d)) {
-    return ['BG', 'BS', 'VQ'].includes(a);
+    return ['BG', 'BS', 'VQ', '2A'].includes(a);
   }
 
-  // To/From Saudi Arabia (Saudia & Biman)
-  if (isSector('DAC', 'JED') || isSector('DAC', 'RUH') || isSector('DAC', 'MED')) {
-    return a === 'SV' || a === 'BG';
+  // To/From Saudi Arabia (Saudia, Biman, US-Bangla, Flynas)
+  if (isSector('DAC', 'JED') || isSector('DAC', 'RUH') || isSector('DAC', 'MED') || isSector('DAC', 'DMM')) {
+    return ['SV', 'BG', 'BS', 'XY'].includes(a);
   }
 
   // To/From UAE (Dubai: EK, BG, FZ, BS)
@@ -153,7 +157,7 @@ const isDirectFlight = (orig: string, dest: string, air: string): boolean => {
 export const getCarriersForSector = (orig: string, dest: string, airlineFilter?: string): string[] => {
   if (airlineFilter) {
     const clean = airlineFilter.toUpperCase().trim();
-    return [clean, clean, clean, clean];
+    return Array(10).fill(clean);
   }
 
   const o = orig.toUpperCase();
@@ -162,82 +166,99 @@ export const getCarriersForSector = (orig: string, dest: string, airlineFilter?:
 
   // Domestic Bangladesh routes
   if (isDomesticAirport(o) && isDomesticAirport(d)) {
-    return ['BG', 'BS', 'VQ', 'BS'];
+    return ['BG', 'BS', 'VQ', '2A', 'BG', 'BS', 'VQ', 'BS', 'BG', 'VQ'];
   }
 
-  // DAC - DXB (corridor carriers: EK, BG, FZ, BS)
+  // DAC - RUH (Saudi Capital corridor: BG, SV, BS, QR, EK, GF, KU, J9, XY)
+  if (isSector('DAC', 'RUH')) {
+    return ['BG', 'SV', 'BS', 'SV', 'BG', 'QR', 'EK', 'GF', 'KU', 'J9', 'XY', 'QR'];
+  }
+
+  // DAC - JED (Saudi West Coast / Umrah / Hajj corridor)
+  if (isSector('DAC', 'JED') || isSector('DAC', 'MED')) {
+    return ['SV', 'BG', 'SV', 'BG', 'BS', 'BG', 'QR', 'EK', 'KU', 'GF', 'J9', 'XY'];
+  }
+
+  // Other Saudi Arabia (DMM)
+  if (isSector('DAC', 'DMM')) {
+    return ['SV', 'BG', 'BS', 'QR', 'EK', 'GF', 'KU', 'J9', 'XY', 'SV', 'BG', 'QR'];
+  }
+
+  // DAC - DXB (Dubai corridor: EK, BG, FZ, BS, QR, GF, KU)
   if (isSector('DAC', 'DXB')) {
-    return ['EK', 'BG', 'FZ', 'BS'];
+    return ['EK', 'BG', 'BS', 'FZ', 'EK', 'BG', 'G9', 'QR', 'GF', 'KU', 'EY', 'EK'];
   }
 
-  // Other UAE
+  // Other UAE (SHJ, AUH)
   if (isSector('DAC', 'SHJ')) {
-    return ['G9', 'BS', 'G9', 'BS'];
+    return ['G9', 'BS', 'G9', 'BS', 'EK', 'BG', 'QR', 'GF'];
   }
   if (isSector('DAC', 'AUH')) {
-    return ['EY', 'BG', 'EY', 'BG'];
+    return ['EY', 'BG', 'EY', 'BG', 'EK', 'BS', 'QR', 'GF'];
   }
 
-  // DAC - JED (corridor carriers: SV, BG)
-  if (isSector('DAC', 'JED')) {
-    return ['SV', 'BG', 'SV', 'BG'];
-  }
-  if (['RUH', 'MED', 'DMM'].includes(d) || ['RUH', 'MED', 'DMM'].includes(o)) {
-    return ['SV', 'BG', 'SV', 'BG'];
-  }
-
-  // DAC - LHR (corridor carriers: BG, QR, EK, TK)
-  if (isSector('DAC', 'LHR') || isSector('DAC', 'LGW') || isSector('DAC', 'LON') || isSector('DAC', 'MAN')) {
-    return ['BG', 'QR', 'EK', 'TK'];
-  }
-
-  // DAC - CCU (corridor carriers: BG, BS, 6E, AI)
-  if (isSector('DAC', 'CCU')) {
-    return ['BG', 'BS', '6E', 'AI'];
-  }
-
-  // DAC - DEL (corridor carriers: AI, BG, 6E, BS)
-  if (isSector('DAC', 'DEL')) {
-    return ['AI', 'BG', '6E', 'BS'];
-  }
-
-  // DAC - DOH
+  // DAC - DOH (Qatar corridor)
   if (isSector('DAC', 'DOH')) {
-    return ['QR', 'BG', 'QR', 'BS'];
+    return ['QR', 'BG', 'QR', 'BS', 'QR', 'EK', 'GF', 'KU'];
   }
 
-  // DAC - KWI
+  // DAC - KWI (Kuwait corridor)
   if (isSector('DAC', 'KWI')) {
-    return ['KU', 'J9', 'BG', 'KU'];
+    return ['KU', 'J9', 'BG', 'KU', 'J9', 'QR', 'EK', 'GF'];
   }
 
-  // DAC - SIN
+  // DAC - BAH (Bahrain corridor)
+  if (isSector('DAC', 'BAH')) {
+    return ['GF', 'GF', 'BG', 'BS', 'QR', 'EK', 'KU', 'GF'];
+  }
+
+  // DAC - MCT (Oman corridor)
+  if (isSector('DAC', 'MCT')) {
+    return ['WY', 'BG', 'BS', 'WY', 'QR', 'EK', 'GF', 'KU'];
+  }
+
+  // DAC - LHR / LON / LGW / MAN (London & UK corridor)
+  if (isSector('DAC', 'LHR') || isSector('DAC', 'LGW') || isSector('DAC', 'LON') || isSector('DAC', 'MAN')) {
+    return ['BG', 'BG', 'QR', 'EK', 'TK', 'SV', 'GF', 'KU', 'QR', 'EK', 'TK', 'SV'];
+  }
+
+  // DAC - CCU (Kolkata corridor)
+  if (isSector('DAC', 'CCU')) {
+    return ['BG', 'BS', '6E', 'AI', 'BG', 'BS', '6E', 'AI'];
+  }
+
+  // DAC - DEL (Delhi corridor)
+  if (isSector('DAC', 'DEL') || isSector('DAC', 'BOM')) {
+    return ['AI', 'BG', '6E', 'BS', 'AI', 'BG', '6E', 'BS'];
+  }
+
+  // DAC - SIN (Singapore corridor)
   if (isSector('DAC', 'SIN')) {
-    return ['SQ', 'BG', 'BS', 'SQ'];
+    return ['SQ', 'BG', 'BS', 'SQ', 'TG', 'MH', '6E', 'AI'];
   }
 
-  // DAC - KUL
+  // DAC - KUL (Kuala Lumpur corridor)
   if (isSector('DAC', 'KUL')) {
-    return ['MH', 'BG', 'BS', 'MH'];
+    return ['MH', 'BG', 'BS', 'MH', 'SQ', 'TG', '6E', 'BG'];
   }
 
-  // DAC - BKK
+  // DAC - BKK (Bangkok corridor)
   if (isSector('DAC', 'BKK')) {
-    return ['TG', 'BG', 'BS', 'TG'];
+    return ['TG', 'BG', 'BS', 'TG', 'SQ', 'MH', '6E', 'BS'];
   }
 
-  // Europe / UK general
+  // Europe general (CDG, FRA, AMS, IST, FCO, MXP)
   if (['CDG', 'FRA', 'AMS', 'IST', 'FCO', 'MXP'].includes(d) || ['CDG', 'FRA', 'AMS', 'IST'].includes(o)) {
-    return ['TK', 'QR', 'EK', 'SV'];
+    return ['TK', 'QR', 'EK', 'SV', 'GF', 'KU', 'LH', 'AF', 'BA', 'QR'];
   }
 
-  // USA / Canada
+  // USA / Canada (JFK, EWR, YYZ, ORD, LAX, SFO, IAD)
   if (['JFK', 'EWR', 'YYZ', 'ORD', 'LAX', 'SFO', 'IAD'].includes(d) || ['JFK', 'EWR', 'YYZ'].includes(o)) {
-    return ['QR', 'EK', 'TK', 'SV'];
+    return ['QR', 'EK', 'TK', 'SV', 'BA', 'KU', 'QR', 'EK', 'TK', 'SV'];
   }
 
   // Default international mix
-  return ['QR', 'EK', 'SV', 'BG'];
+  return ['QR', 'EK', 'SV', 'BG', 'GF', 'KU', 'TK', 'BS', 'QR', 'EK'];
 };
 
 // Dynamic sector fare calculation in BDT
@@ -311,6 +332,7 @@ interface FlightSchedulePattern {
   transitDepTime?: string;
   transitArrTime?: string;
   transitEquip?: string;
+  elapsedTime?: string;
   retFlightNumber?: string;
   retDepTime?: string;
   retArrTime?: string;
@@ -331,12 +353,14 @@ const getScheduleForCarrier = (
 
   // 1. SAUDIA (SV)
   if (air === 'SV') {
-    if (d === 'JED' || d === 'RUH' || d === 'MED') {
+    if (d === 'RUH' || d === 'JED' || d === 'MED' || d === 'DMM') {
       const svDirect: FlightSchedulePattern[] = [
-        { flightNumber: '805', depTime: '0355', arrTime: '0820', equip: '77W', retFlightNumber: '806', retDepTime: '0945', retArrTime: '1810' },
         { flightNumber: '803', depTime: '1215', arrTime: '1640', equip: '789', retFlightNumber: '804', retDepTime: '1800', retArrTime: '0225' },
-        { flightNumber: '807', depTime: '1930', arrTime: '2355', equip: '333', retFlightNumber: '808', retDepTime: '2115', retArrTime: '0540' },
         { flightNumber: '801', depTime: '0230', arrTime: '0615', equip: '77W', retFlightNumber: '802', retDepTime: '2030', retArrTime: '0415' },
+        { flightNumber: '805', depTime: '0355', arrTime: '0820', equip: '77W', retFlightNumber: '806', retDepTime: '0945', retArrTime: '1810' },
+        { flightNumber: '807', depTime: '1930', arrTime: '2355', equip: '333', retFlightNumber: '808', retDepTime: '2115', retArrTime: '0540' },
+        { flightNumber: '811', depTime: '1420', arrTime: '1835', equip: '77W', retFlightNumber: '812', retDepTime: '0600', retArrTime: '1330' },
+        { flightNumber: '815', depTime: '2200', arrTime: '0215', equip: '789', retFlightNumber: '816', retDepTime: '1000', retArrTime: '1730' },
       ];
       return svDirect[optIndex % svDirect.length];
     }
@@ -353,6 +377,7 @@ const getScheduleForCarrier = (
         transitDepTime: '1040',
         transitArrTime: d === 'LHR' ? '1455' : d === 'DXB' ? '1350' : '1730',
         transitEquip: '77W',
+        elapsedTime: '14:20',
         retFlightNumber: d === 'LHR' ? '116' : d === 'DXB' ? '806' : '020',
         retDepTime: '1630',
         retArrTime: '2350',
@@ -370,6 +395,7 @@ const getScheduleForCarrier = (
         transitDepTime: '0900',
         transitArrTime: d === 'LHR' ? '1330' : d === 'DXB' ? '1130' : '1600',
         transitEquip: '789',
+        elapsedTime: '13:45',
         retFlightNumber: d === 'LHR' ? '122' : d === 'DXB' ? '802' : '036',
         retDepTime: '1515',
         retArrTime: '2330',
@@ -387,6 +413,7 @@ const getScheduleForCarrier = (
         transitDepTime: '1945',
         transitArrTime: d === 'LHR' ? '2355' : d === 'DXB' ? '2250' : '0310',
         transitEquip: '77W',
+        elapsedTime: '14:50',
         retFlightNumber: d === 'LHR' ? '120' : d === 'DXB' ? '808' : '024',
         retDepTime: '0630',
         retArrTime: '1410',
@@ -410,6 +437,16 @@ const getScheduleForCarrier = (
       return bgDom[optIndex % bgDom.length];
     }
 
+    if (d === 'RUH' || d === 'DMM') {
+      const bgRuh: FlightSchedulePattern[] = [
+        { flightNumber: '039', depTime: '1945', arrTime: '2330', equip: '788', retFlightNumber: '040', retDepTime: '0100', retArrTime: '0930' },
+        { flightNumber: '049', depTime: '0830', arrTime: '1215', equip: '77W', retFlightNumber: '050', retDepTime: '1400', retArrTime: '2230' },
+        { flightNumber: '037', depTime: '1500', arrTime: '1845', equip: '788', retFlightNumber: '038', retDepTime: '2015', retArrTime: '0445' },
+        { flightNumber: '041', depTime: '2315', arrTime: '0300', equip: '77W', retFlightNumber: '042', retDepTime: '0430', retArrTime: '1300' },
+      ];
+      return bgRuh[optIndex % bgRuh.length];
+    }
+
     if (d === 'DXB') {
       const bgDxb: FlightSchedulePattern[] = [
         { flightNumber: '047', depTime: '1930', arrTime: '2315', equip: '77W', retFlightNumber: '048', retDepTime: '0100', retArrTime: '0745' },
@@ -418,7 +455,7 @@ const getScheduleForCarrier = (
       return bgDxb[optIndex % bgDxb.length];
     }
 
-    if (d === 'JED') {
+    if (d === 'JED' || d === 'MED') {
       const bgJed: FlightSchedulePattern[] = [
         { flightNumber: '335', depTime: '0215', arrTime: '0645', equip: '77W', retFlightNumber: '336', retDepTime: '0845', retArrTime: '1715' },
         { flightNumber: '135', depTime: '1130', arrTime: '1600', equip: '788', retFlightNumber: '136', retDepTime: '1800', retArrTime: '0230' },
@@ -428,7 +465,7 @@ const getScheduleForCarrier = (
       return bgJed[optIndex % bgJed.length];
     }
 
-    if (d === 'LHR') {
+    if (d === 'LHR' || d === 'LGW' || d === 'LON' || d === 'MAN') {
       const bgLhr: FlightSchedulePattern[] = [
         { flightNumber: '201', depTime: '1005', arrTime: '1600', equip: '788', retFlightNumber: '202', retDepTime: '1815', retArrTime: '0945' },
         { flightNumber: '205', depTime: '0330', arrTime: '0925', equip: '789', retFlightNumber: '206', retDepTime: '1145', retArrTime: '0315' },
@@ -467,8 +504,35 @@ const getScheduleForCarrier = (
       return bsDom[optIndex % bsDom.length];
     }
 
+    if (d === 'RUH' || d === 'DMM') {
+      const bsRuh: FlightSchedulePattern[] = [
+        { flightNumber: '315', depTime: '2030', arrTime: '0045', equip: '738', retFlightNumber: '316', retDepTime: '0215', retArrTime: '1030' },
+        { flightNumber: '317', depTime: '0915', arrTime: '1330', equip: '738', retFlightNumber: '318', retDepTime: '1500', retArrTime: '2315' },
+        { flightNumber: '319', depTime: '1445', arrTime: '1900', equip: '738', retFlightNumber: '320', retDepTime: '2030', retArrTime: '0445' },
+        { flightNumber: '323', depTime: '0130', arrTime: '0545', equip: '738', retFlightNumber: '324', retDepTime: '0715', retArrTime: '1530' },
+      ];
+      return bsRuh[optIndex % bsRuh.length];
+    }
+
+    if (d === 'JED' || d === 'MED') {
+      const bsJed: FlightSchedulePattern[] = [
+        { flightNumber: '321', depTime: '1930', arrTime: '0015', equip: '738', retFlightNumber: '322', retDepTime: '0145', retArrTime: '1000' },
+        { flightNumber: '323', depTime: '1100', arrTime: '1545', equip: '738', retFlightNumber: '324', retDepTime: '1715', retArrTime: '0130' },
+      ];
+      return bsJed[optIndex % bsJed.length];
+    }
+
     if (d === 'DXB') {
       return { flightNumber: '341', depTime: '1845', arrTime: '2230', equip: '738', retFlightNumber: '342', retDepTime: '2345', retArrTime: '0630' };
+    }
+    if (d === 'SHJ') {
+      return { flightNumber: '345', depTime: '2015', arrTime: '2355', equip: '738', retFlightNumber: '346', retDepTime: '0115', retArrTime: '0745' };
+    }
+    if (d === 'DOH') {
+      return { flightNumber: '337', depTime: '1900', arrTime: '2215', equip: '738', retFlightNumber: '338', retDepTime: '2330', retArrTime: '0700' };
+    }
+    if (d === 'MCT') {
+      return { flightNumber: '311', depTime: '0930', arrTime: '1300', equip: '738', retFlightNumber: '312', retDepTime: '1415', retArrTime: '2130' };
     }
     if (d === 'CCU') {
       return { flightNumber: '201', depTime: '0815', arrTime: '0900', equip: '738', retFlightNumber: '202', retDepTime: '0945', retArrTime: '1030' };
@@ -517,7 +581,9 @@ const getScheduleForCarrier = (
       };
     }
 
-    const transitFlt = d === 'DXB'
+    const transitFlt = d === 'RUH'
+      ? (optIndex % 2 === 0 ? '1164' : '1168')
+      : d === 'DXB'
       ? (701 + optIndex * 4).toString()
       : d === 'LHR'
       ? (3 + optIndex * 4).toString()
@@ -525,8 +591,9 @@ const getScheduleForCarrier = (
       ? (1184 + optIndex * 2).toString()
       : (703 + optIndex * 2).toString();
 
-    const transitDep = optIndex % 2 === 0 ? '0845' : '1530';
-    const transitArr = optIndex % 2 === 0 ? '1115' : '1800';
+    const transitDep = d === 'RUH' ? (optIndex % 2 === 0 ? '0845' : '0115') : (optIndex % 2 === 0 ? '0845' : '1530');
+    const transitArr = d === 'RUH' ? (optIndex % 2 === 0 ? '1015' : '0245') : (optIndex % 2 === 0 ? '1115' : '1800');
+    const transitElapsed = d === 'RUH' ? (optIndex % 2 === 0 ? '09:05' : '10:00') : '10:45';
 
     return {
       flightNumber: qrLeg1.flt,
@@ -538,6 +605,7 @@ const getScheduleForCarrier = (
       transitDepTime: transitDep,
       transitArrTime: transitArr,
       transitEquip: '359',
+      elapsedTime: transitElapsed,
       retFlightNumber: (parseInt(transitFlt, 10) + 1).toString(),
       retDepTime: '1630',
       retArrTime: '1900',
@@ -569,9 +637,17 @@ const getScheduleForCarrier = (
       };
     }
 
-    const transitFlt = d === 'JED' ? (805 + optIndex * 2).toString() : d === 'LHR' ? (1 + optIndex * 2).toString() : (201 + optIndex * 2).toString();
-    const transitDep = optIndex % 2 === 0 ? '0715' : '1430';
-    const transitArr = optIndex % 2 === 0 ? '0925' : '1640';
+    const transitFlt = d === 'RUH'
+      ? '819'
+      : d === 'JED'
+      ? (805 + optIndex * 2).toString()
+      : d === 'LHR'
+      ? (1 + optIndex * 2).toString()
+      : (201 + optIndex * 2).toString();
+
+    const transitDep = d === 'RUH' ? '1515' : (optIndex % 2 === 0 ? '0715' : '1430');
+    const transitArr = d === 'RUH' ? '1615' : (optIndex % 2 === 0 ? '0925' : '1640');
+    const transitElapsed = d === 'RUH' ? '09:20' : '12:30';
 
     return {
       flightNumber: ekLeg1.flt,
@@ -583,6 +659,7 @@ const getScheduleForCarrier = (
       transitDepTime: transitDep,
       transitArrTime: transitArr,
       transitEquip: '380',
+      elapsedTime: transitElapsed,
       retFlightNumber: (parseInt(transitFlt, 10) + 1).toString(),
       retDepTime: '1430',
       retArrTime: '2245',
@@ -620,6 +697,7 @@ const getScheduleForCarrier = (
       transitDepTime: '1430',
       transitArrTime: d === 'LHR' ? '1640' : '1820',
       transitEquip: '359',
+      elapsedTime: '15:10',
       retFlightNumber: d === 'LHR' ? '1986' : '002',
       retDepTime: '1800',
       retArrTime: '2355',
@@ -674,17 +752,107 @@ const getScheduleForCarrier = (
       arrTime: '0615',
       equip: '77W',
       transit: 'KWI',
-      transitFlightNumber: d === 'JED' ? '785' : '101',
-      transitDepTime: '0830',
-      transitArrTime: d === 'JED' ? '1045' : '1315',
+      transitFlightNumber: d === 'RUH' ? '785' : d === 'JED' ? '785' : '101',
+      transitDepTime: d === 'RUH' ? '0830' : '0830',
+      transitArrTime: d === 'RUH' ? '1000' : (d === 'JED' ? '1045' : '1315'),
       transitEquip: '320',
-      retFlightNumber: d === 'JED' ? '786' : '102',
+      elapsedTime: d === 'RUH' ? '10:15' : '11:30',
+      retFlightNumber: d === 'RUH' ? '786' : (d === 'JED' ? '786' : '102'),
       retDepTime: '1545',
       retArrTime: '1800',
       retTransitFlightNumber: '283',
       retTransitDepTime: '2015',
       retTransitArrTime: '0445',
     };
+  }
+
+  // 13. GULF AIR (GF)
+  if (air === 'GF') {
+    if (d === 'BAH') {
+      return {
+        flightNumber: '251',
+        depTime: '0530',
+        arrTime: '0845',
+        equip: '789',
+        retFlightNumber: '250',
+        retDepTime: '1945',
+        retArrTime: '0415',
+      };
+    }
+    return {
+      flightNumber: '251',
+      depTime: '0530',
+      arrTime: '0845',
+      equip: '789',
+      transit: 'BAH',
+      transitFlightNumber: d === 'RUH' ? '163' : d === 'JED' ? '171' : '003',
+      transitDepTime: d === 'RUH' ? '1030' : (d === 'JED' ? '1045' : '1100'),
+      transitArrTime: d === 'RUH' ? '1145' : (d === 'JED' ? '1315' : '1450'),
+      transitEquip: '321',
+      elapsedTime: '09:15',
+      retFlightNumber: d === 'RUH' ? '164' : (d === 'JED' ? '172' : '004'),
+      retDepTime: '1300',
+      retArrTime: '1415',
+      retTransitFlightNumber: '250',
+      retTransitDepTime: '1945',
+      retTransitArrTime: '0415',
+    };
+  }
+
+  // 14. JAZEERA AIRWAYS (J9)
+  if (air === 'J9') {
+    if (d === 'KWI') {
+      return {
+        flightNumber: '532',
+        depTime: '1830',
+        arrTime: '2215',
+        equip: '320',
+        retFlightNumber: '531',
+        retDepTime: '0915',
+        retArrTime: '1715',
+      };
+    }
+    return {
+      flightNumber: '532',
+      depTime: '1830',
+      arrTime: '2215',
+      equip: '320',
+      transit: 'KWI',
+      transitFlightNumber: d === 'RUH' ? '123' : d === 'JED' ? '215' : '105',
+      transitDepTime: d === 'RUH' ? '0130' : (d === 'JED' ? '0200' : '0230'),
+      transitArrTime: d === 'RUH' ? '0300' : (d === 'JED' ? '0415' : '0500'),
+      transitEquip: '320',
+      elapsedTime: '11:30',
+      retFlightNumber: d === 'RUH' ? '124' : (d === 'JED' ? '216' : '106'),
+      retDepTime: '0430',
+      retArrTime: '0600',
+      retTransitFlightNumber: '531',
+      retTransitDepTime: '0915',
+      retTransitArrTime: '1715',
+    };
+  }
+
+  // 15. FLYNAS (XY)
+  if (air === 'XY') {
+    return {
+      flightNumber: d === 'JED' ? '881' : '883',
+      depTime: d === 'JED' ? '1530' : '1400',
+      arrTime: d === 'JED' ? '2010' : '1815',
+      equip: '320',
+      retFlightNumber: d === 'JED' ? '882' : '884',
+      retDepTime: d === 'JED' ? '0600' : '0445',
+      retArrTime: d === 'JED' ? '1430' : '1300',
+    };
+  }
+
+  // 16. AIR ASTRA (2A)
+  if (air === '2A' && isDomesticAirport(o) && isDomesticAirport(d)) {
+    const astraDom: FlightSchedulePattern[] = [
+      { flightNumber: '451', depTime: '0745', arrTime: '0845', equip: 'AT7', retFlightNumber: '452', retDepTime: '0915', retArrTime: '1015' },
+      { flightNumber: '453', depTime: '1215', arrTime: '1315', equip: 'AT7', retFlightNumber: '454', retDepTime: '1345', retArrTime: '1445' },
+      { flightNumber: '455', depTime: '1600', arrTime: '1700', equip: 'AT7', retFlightNumber: '456', retDepTime: '1730', retArrTime: '1830' },
+    ];
+    return astraDom[optIndex % astraDom.length];
   }
 
   // Generic fallback for any other airline
@@ -871,61 +1039,86 @@ export interface ParsedAnParams {
 
 export const parseAnInput = (rawCmd: string): ParsedAnParams => {
   const upper = rawCmd.toUpperCase().trim();
-  const afterAn = upper.replace(/^AN\s*/, '').trim();
+  let rem = upper.replace(/^AN\s*/, '').trim();
 
-  // 1. Extract Airline Qualifier: /AQR, //AQR, /A QR, /ASV, //ASV, or trailing /QR, /SV if in AIRLINES
+  // 1. Extract Airline Qualifier: /AQR, //AQR, /A QR, /ASV, //ASV, /ABG, /ABS, or trailing /QR, /SV, /BG, /BS
   let airlineFilter: string | undefined = undefined;
-  let cleanCore = afterAn;
-
-  const airMatch = afterAn.match(/(?:\/\/|\/|\s)A\s*([A-Z0-9]{2})/);
+  const airMatch = rem.match(/(?:\/\/|\/|\s)A\s*([A-Z0-9]{2})(?:\s|$)/);
   if (airMatch) {
     airlineFilter = airMatch[1];
-    cleanCore = afterAn.replace(airMatch[0], '').trim();
+    rem = rem.replace(airMatch[0], ' ').trim();
   } else {
-    const trailingAir = afterAn.match(/(?:\/\/|\/)([A-Z0-9]{2})$/);
-    if (trailingAir && AIRLINES.some((a) => a.code === trailingAir[1])) {
-      airlineFilter = trailingAir[1];
-      cleanCore = afterAn.replace(trailingAir[0], '').trim();
+    const slashAir = rem.match(/(?:\/\/|\/)([A-Z0-9]{2})$/);
+    if (
+      slashAir &&
+      (AIRLINES.some((a) => a.code === slashAir[1]) ||
+        ['BG', 'BS', 'VQ', '2A', 'SV', 'QR', 'EK', 'FZ', 'G9', 'GF', 'KU', 'J9', 'XY', 'TK', 'SQ', 'MH', 'TG', 'AI', '6E', 'BA'].includes(slashAir[1]))
+    ) {
+      airlineFilter = slashAir[1];
+      rem = rem.replace(slashAir[0], ' ').trim();
     }
   }
 
-  // 2. Extract Date: Day (1-2 digits) + 3-letter Month from MONTHS (e.g. 30SEP, 15OCT, 25NOV, 10JAN)
-  let date = '25OCT';
-  const dateRegex = /(\d{1,2})([A-Z]{3})/;
-  const dateMatch = cleanCore.match(dateRegex);
-  if (dateMatch && MONTHS.includes(dateMatch[2])) {
-    date = `${dateMatch[1]}${dateMatch[2]}`;
-    cleanCore = cleanCore.replace(dateMatch[0], '').trim();
+  // 2. Strip any time qualifiers (e.g. 1800, /1800) or class qualifiers (e.g. /CY, /CC, /K)
+  rem = rem.replace(/(?:\/\/|\/|\s)[0-2]\d[0-5]\d(?:\s|$)/g, ' ');
+  rem = rem.replace(/(?:\/\/|\/)[A-Z]{1,2}(?:\s|$)/g, ' ');
+
+  // 3. Extract Date: Day (1-2 digits) + 3-letter Month from MONTHS (e.g. 30SEP, 15OCT, 25NOV, 10JAN)
+  let date = '30SEP';
+  const monthListStr = MONTHS.join('|');
+  const dateRegex = new RegExp(`(?:^|[\\s\\/-]|D)?(\\d{1,2})(${monthListStr})(?:\\d{2,4})?(?:[\\s\\/-]|$)`);
+  const dateMatch = rem.match(dateRegex);
+
+  if (dateMatch) {
+    const day = dateMatch[1].padStart(2, '0');
+    const month = dateMatch[2];
+    date = `${day}${month}`;
+    rem = rem.replace(dateMatch[0], ' ').trim();
+  } else {
+    // Check if input begins with 1-2 digits without month name (e.g. AN30DACRUH)
+    const dayOnlyMatch = rem.match(/^(\d{1,2})([A-Z]{6})/);
+    if (dayOnlyMatch) {
+      date = `${dayOnlyMatch[1].padStart(2, '0')}SEP`;
+      rem = dayOnlyMatch[2];
+    }
   }
 
-  // 3. Extract Origin and Destination
+  // 4. Extract Origin and Destination from remaining letters
   let orig = 'DAC';
-  let dest = 'DXB';
+  let dest = 'RUH';
 
-  const pairMatch = cleanCore.match(/([A-Z]{3})[\s\/-]*([A-Z]{3})/);
-  if (pairMatch && !MONTHS.includes(pairMatch[1]) && !MONTHS.includes(pairMatch[2])) {
-    orig = pairMatch[1];
-    dest = pairMatch[2];
+  const lettersOnly = rem.replace(/[^A-Z]/g, '');
+
+  if (lettersOnly.length === 6) {
+    orig = lettersOnly.substring(0, 3);
+    dest = lettersOnly.substring(3, 6);
   } else {
-    const cleanTokens = (cleanCore.match(/[A-Z]{3}/g) || []).filter(
-      (tok) => !MONTHS.includes(tok)
-    );
-    if (cleanTokens.length >= 2) {
-      orig = cleanTokens[0];
-      dest = cleanTokens[1];
-    } else if (cleanTokens.length === 1) {
-      if (cleanTokens[0] === 'DAC') {
-        dest = 'DXB';
+    const tokens = (rem.match(/[A-Z]{3}/g) || []).filter((t) => !MONTHS.includes(t));
+    if (tokens.length >= 2) {
+      orig = tokens[0];
+      dest = tokens[1];
+    } else if (tokens.length === 1) {
+      if (tokens[0] === 'DAC') {
+        orig = 'DAC';
+        dest = 'RUH';
       } else {
         orig = 'DAC';
-        dest = cleanTokens[0];
+        dest = tokens[0];
+      }
+    } else if (lettersOnly.length >= 3) {
+      if (lettersOnly.startsWith('DAC')) {
+        orig = 'DAC';
+        dest = lettersOnly.substring(3, 6) || 'RUH';
+      } else {
+        dest = lettersOnly.substring(0, 3);
+        orig = 'DAC';
       }
     }
   }
 
   return {
     orig: orig || 'DAC',
-    dest: dest || 'DXB',
+    dest: dest || 'RUH',
     date: cleanGdsDate(date),
     airlineFilter,
   };
@@ -1133,20 +1326,37 @@ export const generateAvailability = (
   const airlinesToUse = getCarriersForSector(orig, dest, air);
   const options: AvailabilityOption[] = [];
 
+  const REALISTIC_CLASS_PATTERNS: { c1: string; c2: string }[] = [
+    { c1: 'J9 C9 D9 Y9 B9 M9', c2: 'Q9 T9 V9 L9 K9' },
+    { c1: 'J9 C7 D4 Y9 B9 M9', c2: 'Q9 T7 V4 L2 K0' },
+    { c1: 'J9 C9 D6 Y9 B9 M7', c2: 'Q9 T9 V8 L5 K2' },
+    { c1: 'J4 C2 D0 Y9 B7 M4', c2: 'Q7 T4 V2 L0 K0' },
+    { c1: 'J9 C9 D4 Y9 B9 M9', c2: 'Q9 T5 V3 L1 K0' },
+    { c1: 'J9 C8 D5 Y9 B9 M9', c2: 'Q9 T4 V2 L0 K0' },
+    { c1: 'J9 C6 D2 Y9 B9 M7', c2: 'Q6 T3 V1 L0 K0' },
+    { c1: 'J9 C9 D9 Y9 B9 M9', c2: 'Q9 T7 V4 L2 K1' },
+    { c1: 'J7 C4 D1 Y9 B8 M5', c2: 'Q4 T2 V1 L0 K0' },
+    { c1: 'J9 C9 D7 Y9 B9 M9', c2: 'Q9 T8 V5 L3 K1' },
+    { c1: 'J9 C7 D3 Y9 B9 M9', c2: 'Q9 T6 V3 L1 K0' },
+    { c1: 'J9 C9 D9 Y9 B9 M9', c2: 'Q9 T9 V9 L9 K9' },
+  ];
+
   airlinesToUse.forEach((carrier, index) => {
     const lineNum = index + 1;
     const sched = getScheduleForCarrier(carrier, orig, dest, index);
+    const cp1 = REALISTIC_CLASS_PATTERNS[index % REALISTIC_CLASS_PATTERNS.length];
+    const cp2 = REALISTIC_CLASS_PATTERNS[(index + 3) % REALISTIC_CLASS_PATTERNS.length];
 
     if (sched.transit && sched.transitFlightNumber) {
-      // Connecting option
+      // Connecting option - leg 2 connects strictly to final destination
       options.push({
         lineNum,
         date: dte,
         flight1: {
           airline: carrier,
           flightNumber: sched.flightNumber,
-          classes1: 'J9 C9 D9 Y9 B9 M9',
-          classes2: 'Q9 T9 V9 L9 K9',
+          classes1: cp1.c1,
+          classes2: cp1.c2,
           origin: orig,
           originTerm: '1',
           destination: sched.transit,
@@ -1157,15 +1367,15 @@ export const generateAvailability = (
         flight2: {
           airline: carrier,
           flightNumber: sched.transitFlightNumber,
-          classes1: 'J9 C9 D9 Y9 B9 M9',
-          classes2: 'Q9 T9 V9 L9 K9',
+          classes1: cp2.c1,
+          classes2: cp2.c2,
           origin: sched.transit,
           destination: dest,
           destTerm: '2',
           depTime: sched.transitDepTime || '0900',
           arrTime: sched.transitArrTime || '1400',
           equip: sched.transitEquip || '789',
-          elapsedTime: '10:45',
+          elapsedTime: sched.elapsedTime || '10:45',
         },
       });
     } else {
@@ -1176,8 +1386,8 @@ export const generateAvailability = (
         flight1: {
           airline: carrier,
           flightNumber: sched.flightNumber,
-          classes1: 'J9 C9 D9 Y9 B9 M9',
-          classes2: 'Q9 T9 V9 L9 K9',
+          classes1: cp1.c1,
+          classes2: cp1.c2,
           origin: orig,
           originTerm: '1',
           destination: dest,
@@ -1196,7 +1406,7 @@ export const generateAvailability = (
 
   const destAirport = AIRPORTS.find((a) => a.code === dest);
   const destCity = destAirport ? destAirport.city : dest;
-  const apClean = destAirport ? destAirport.name.replace(/\s+(AIRPORT|INTL|INTERNATIONAL)$/i, '') : dest;
+  const apClean = destAirport ? destAirport.name.replace(/\s+(AIRPORT|INTL|INTERNATIONAL)$/i, '').trim() : dest;
   const destCountry = destAirport ? destAirport.countryCode : 'XX';
   const destLocation = `${dest} ${destCity} ${apClean} INTL.${destCountry}`;
   const dow = getDayOfWeek(dte);
