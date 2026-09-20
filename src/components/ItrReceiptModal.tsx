@@ -58,9 +58,23 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
   const handleDirectPdfDownload = async () => {
     try {
       setIsGeneratingPdf(true);
-      await downloadItrPdfFile(data, receiptCardRef.current);
+      const element = receiptCardRef.current || document.getElementById('itr-printable-receipt');
+      const pnr = data.pnrLocator || 'TKT';
+      const opt = {
+        margin: [4, 4, 4, 4],
+        filename: `E-Ticket_${pnr}_${Date.now()}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, logging: false },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      };
+
+      if (element && typeof window !== 'undefined' && window.html2pdf) {
+        await window.html2pdf().set(opt).from(element).save();
+      } else {
+        await downloadItrPdfFile(data, element);
+      }
     } catch (err) {
-      console.error('PDF download error:', err);
+      console.error('PDF direct download error:', err);
     } finally {
       setIsGeneratingPdf(false);
     }

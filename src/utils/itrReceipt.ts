@@ -1204,85 +1204,102 @@ export const printItrDocument = (data: ItrReceiptData): void => {
   }
 };
 
+declare global {
+  interface Window {
+    html2pdf?: any;
+  }
+}
+
 export const downloadItrPdfFile = async (
   data: ItrReceiptData,
   sourceElement?: HTMLElement | null
 ): Promise<void> => {
+  const pnr = data.pnrLocator || 'TKT';
+  const filename = `E-Ticket_${pnr}_${Date.now()}.pdf`;
+
+  // Target the inner ticket container element (the clean white ticket confirmation card)
+  let elementToCapture = sourceElement || document.getElementById('itr-printable-receipt');
+  let tempContainer: HTMLElement | null = null;
+
+  if (!elementToCapture) {
+    tempContainer = document.createElement('div');
+    tempContainer.style.position = 'fixed';
+    tempContainer.style.left = '-9999px';
+    tempContainer.style.top = '0';
+    tempContainer.style.width = '840px';
+    tempContainer.style.backgroundColor = '#ffffff';
+    tempContainer.style.zIndex = '-9999';
+    tempContainer.innerHTML = generateItrHtmlDocument(data);
+    document.body.appendChild(tempContainer);
+    elementToCapture = (tempContainer.querySelector('#itr-printable-receipt') as HTMLElement) || tempContainer;
+  }
+
+  // Exact html2pdf options specified by user:
+  const opt = {
+    margin: [4, 4, 4, 4],
+    filename,
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+  };
+
   try {
-    let elementToCapture = sourceElement;
-    let tempContainer: HTMLElement | null = null;
+    // If html2pdf is available globally on window, use it
+    if (typeof window !== 'undefined' && !window.html2pdf) {
+      // Load CDN dynamically if not yet attached
+      await new Promise<void>((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error('Failed to load html2pdf.js bundle'));
+        document.head.appendChild(script);
+      });
+    }
 
-    if (!elementToCapture) {
-      tempContainer = document.createElement('div');
-      tempContainer.style.position = 'fixed';
-      tempContainer.style.left = '-9999px';
-      tempContainer.style.top = '0';
-      tempContainer.style.width = '860px';
-      tempContainer.style.backgroundColor = '#ffffff';
-      tempContainer.style.zIndex = '-9999';
+    if (typeof window !== 'undefined' && window.html2pdf) {
+      await window.html2pdf().set(opt).from(elementToCapture).save();
+    } else {
+      // Direct jsPDF fallback without triggering print
+      const canvas = await html2canvas(elementToCapture, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+      });
 
-      const tempIframe = document.createElement('iframe');
-      tempIframe.style.width = '860px';
-      tempIframe.style.height = '1400px';
-      tempContainer.appendChild(tempIframe);
-      document.body.appendChild(tempContainer);
+      const imgData = canvas.toDataURL('image/jpeg', 0.98);
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4',
+      });
 
-      const iframeDoc = tempIframe.contentDocument || tempIframe.contentWindow?.document;
-      if (iframeDoc) {
-        iframeDoc.open();
-        iframeDoc.write(generateItrHtmlDocument(data));
-        iframeDoc.close();
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = pdfWidth - 12;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
-        await new Promise((resolve) => setTimeout(resolve, 350));
-        elementToCapture = iframeDoc.getElementById('itr-printable-receipt') as HTMLElement;
+      let heightLeft = imgHeight;
+      let position = 6;
+
+      pdf.addImage(imgData, 'JPEG', 6, position, imgWidth, imgHeight);
+      heightLeft -= pdfHeight - 12;
+
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight + 6;
+        pdf.addPage();
+        pdf.addImage(imgData, 'JPEG', 6, position, imgWidth, imgHeight);
+        heightLeft -= pdfHeight - 12;
       }
+
+      pdf.save(filename);
     }
-
-    if (!elementToCapture) {
-      throw new Error('Receipt DOM element could not be found for PDF export.');
-    }
-
-    const canvas = await html2canvas(elementToCapture, {
-      scale: 2,
-      useCORS: true,
-      logging: false,
-      backgroundColor: '#ffffff',
-      windowWidth: 860,
-    });
-
+  } catch (err) {
+    console.error('Direct PDF export error:', err);
+    // STRICT: DO NOT call window.print() or printItrDocument()
+  } finally {
     if (tempContainer && document.body.contains(tempContainer)) {
       document.body.removeChild(tempContainer);
     }
-
-    const imgData = canvas.toDataURL('image/jpeg', 0.98);
-    const pdf = new jsPDF({
-      orientation: 'portrait',
-      unit: 'mm',
-      format: 'a4',
-    });
-
-    const pdfWidth = pdf.internal.pageSize.getWidth();
-    const pdfHeight = pdf.internal.pageSize.getHeight();
-    const imgWidth = pdfWidth - 16; // 8mm margins
-    const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-    let heightLeft = imgHeight;
-    let position = 8;
-
-    pdf.addImage(imgData, 'JPEG', 8, position, imgWidth, imgHeight);
-    heightLeft -= pdfHeight - 16;
-
-    while (heightLeft > 0) {
-      position = heightLeft - imgHeight + 8;
-      pdf.addPage();
-      pdf.addImage(imgData, 'JPEG', 8, position, imgWidth, imgHeight);
-      heightLeft -= pdfHeight - 16;
-    }
-
-    const filename = `ETicket_${data.pnrLocator}_${data.ticketNumber}.pdf`;
-    pdf.save(filename);
-  } catch (err) {
-    console.error('Direct PDF export error, falling back to print dialog:', err);
-    printItrDocument(data);
   }
 };
