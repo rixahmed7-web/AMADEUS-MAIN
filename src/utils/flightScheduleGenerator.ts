@@ -1341,36 +1341,449 @@ export const generateTimetable = (rawCmd: string): string => {
 };
 
 // ======================================================================
-// 8. FARE DISPLAY (FQD)
+// 8. FARE DISPLAY (FQD) & DYNAMIC AIRLINE PRICING ENGINE
 // ======================================================================
 
-export const generateFareDisplay = (rawCmd: string): string => {
+export interface FqdQuery {
+  orig: string;
+  dest: string;
+  airline: string;
+  travelDateStr: string; // e.g. "30SEP26"
+  dateToken: string; // e.g. "30SEP"
+  year: number; // e.g. 2026
+  directionFilter?: 'OW' | 'RT';
+  cabinFilter?: 'ECONOMY' | 'BUSINESS';
+}
+
+export const parseFqdInput = (rawCmd: string): FqdQuery => {
   const upper = rawCmd.toUpperCase().trim();
-  const match = upper.match(/^FQD\s*([A-Z]{3})([A-Z]{3})(?:\/A([A-Z0-9]{2}))?/);
+  let rest = upper.replace(/^FQD\s*/, '').trim();
 
-  let orig = match ? match[1] : 'DAC';
-  let dest = match ? match[2] : 'DXB';
-  const air = match && match[3] ? match[3] : 'EK';
+  let airline = '';
+  let dateToken = '';
+  let year = 2026;
+  let directionFilter: 'OW' | 'RT' | undefined = undefined;
+  let cabinFilter: 'ECONOMY' | 'BUSINESS' | undefined = undefined;
 
-  if (orig === 'SEP' || MONTHS.includes(orig)) orig = 'DAC';
-  if (dest === 'SEP' || MONTHS.includes(dest)) dest = orig === 'DAC' ? 'DXB' : 'DAC';
+  // Check cabin filter: /KC, /KD, /KJ, /C (Business) or /KY, /Y (Economy)
+  if (/\/(?:KC|KD|KJ|C)\b/.test(rest)) {
+    cabinFilter = 'BUSINESS';
+    rest = rest.replace(/\/(?:KC|KD|KJ|C)\b/g, '');
+  } else if (/\/(?:KY|Y)\b/.test(rest)) {
+    cabinFilter = 'ECONOMY';
+    rest = rest.replace(/\/(?:KY|Y)\b/g, '');
+  }
 
+  // Check direction: /IO (One Way) or /IR (Round Trip)
+  if (/\/IO\b/.test(rest)) {
+    directionFilter = 'OW';
+    rest = rest.replace(/\/IO\b/g, '');
+  } else if (/\/IR\b/.test(rest)) {
+    directionFilter = 'RT';
+    rest = rest.replace(/\/IR\b/g, '');
+  }
+
+  // Check /A<AIRLINE> e.g. /ABG, /AEK, /ASV, /AFZ
+  const airMatch = rest.match(/\/A([A-Z0-9]{2})\b/);
+  if (airMatch) {
+    airline = airMatch[1];
+    rest = rest.replace(/\/A[A-Z0-9]{2}\b/g, '');
+  }
+
+  // Check /D<DATE> or /<DATE> e.g. /D30SEP, /D30SEP26, /D15MAY22, /30SEP
+  const dateMatch = rest.match(/\/(?:D)?(\d{1,2}[A-Z]{3}(\d{2,4})?)\b/);
+  if (dateMatch) {
+    const fullDate = dateMatch[1];
+    const dMatch = fullDate.match(/^(\d{1,2})([A-Z]{3})(\d{2,4})?/);
+    if (dMatch) {
+      dateToken = `${dMatch[1].padStart(2, '0')}${dMatch[2]}`;
+      if (dMatch[3]) {
+        year = dMatch[3].length === 2 ? 2000 + parseInt(dMatch[3], 10) : parseInt(dMatch[3], 10);
+      }
+    }
+    rest = rest.replace(/\/(?:D)?\d{1,2}[A-Z]{3}(?:\d{2,4})?\b/g, '');
+  }
+
+  // Inspect remaining string for orig/dest and potential leading date e.g. "30SEPDACDXB" or "DACDXB"
+  rest = rest.replace(/[\/\s-]+/g, ' ').trim();
+
+  const leadingDateMatch = rest.match(/^(\d{1,2})([A-Z]{3})(\d{2,4})?\s*(.*)$/);
+  if (leadingDateMatch && !dateToken && MONTHS.includes(leadingDateMatch[2])) {
+    dateToken = `${leadingDateMatch[1].padStart(2, '0')}${leadingDateMatch[2]}`;
+    if (leadingDateMatch[3]) {
+      year = leadingDateMatch[3].length === 2 ? 2000 + parseInt(leadingDateMatch[3], 10) : parseInt(leadingDateMatch[3], 10);
+    }
+    rest = leadingDateMatch[4].trim();
+  }
+
+  const pairParts = rest.split(/\s+/).filter(Boolean);
+  let orig = 'DAC';
+  let dest = 'DXB';
+
+  if (pairParts.length >= 2 && pairParts[0].length === 3 && pairParts[1].length === 3) {
+    orig = pairParts[0];
+    dest = pairParts[1];
+  } else if (pairParts.length >= 1 && pairParts[0].length === 6) {
+    orig = pairParts[0].substring(0, 3);
+    dest = pairParts[0].substring(3, 6);
+  }
+
+  if (MONTHS.includes(orig)) orig = 'DAC';
+  if (MONTHS.includes(dest)) dest = orig === 'DAC' ? 'DXB' : 'DAC';
+
+  if (!dateToken) {
+    dateToken = '30SEP';
+    year = 2026;
+  }
+
+  const travelDateStr = `${dateToken}${String(year).slice(-2)}`;
+
+  if (!airline) {
+    if (orig === 'DAC' && ['DXB', 'AUH', 'SHJ'].includes(dest)) airline = 'EK';
+    else if (orig === 'DAC' && ['JED', 'RUH', 'MED'].includes(dest)) airline = 'SV';
+    else if (orig === 'DAC' && ['DOH'].includes(dest)) airline = 'QR';
+    else if (isDomesticAirport(orig) && isDomesticAirport(dest)) airline = 'BG';
+    else airline = 'EK';
+  }
+
+  return {
+    orig,
+    dest,
+    airline,
+    travelDateStr,
+    dateToken,
+    year,
+    directionFilter,
+    cabinFilter,
+  };
+};
+
+const getSectorMiles = (orig: string, dest: string): { tpm: number; mpm: number } => {
+  const o = orig.toUpperCase();
+  const d = dest.toUpperCase();
+  const pair = [o, d].sort().join('-');
+  const mileTable: Record<string, number> = {
+    'DAC-DXB': 2186,
+    'AUH-DAC': 2195,
+    'DAC-SHJ': 2174,
+    'DAC-JED': 3244,
+    'DAC-RUH': 2780,
+    'DAC-MED': 3190,
+    'DAC-DOH': 2435,
+    'DAC-KWI': 2680,
+    'DAC-BAH': 2490,
+    'DAC-MCT': 2020,
+    'DAC-SIN': 1798,
+    'DAC-KUL': 1632,
+    'DAC-BKK': 976,
+    'DAC-LHR': 5012,
+    'DAC-JFK': 7984,
+    'DAC-YYZ': 7650,
+    'RUH-YYZ': 6350,
+    'DAC-CGP': 141,
+    'DAC-CXB': 186,
+    'DAC-CXE': 186,
+    'DAC-ZYL': 122,
+    'DAC-JSR': 85,
+    'DAC-RJH': 125,
+    'DAC-SPD': 175,
+    'DAC-BZL': 74,
+  };
+
+  const tpm = mileTable[pair] || Math.max(140, Math.round(calculateSectorFare(orig, dest).base / 22));
+  const mpm = Math.round(tpm * 1.2);
+  return { tpm, mpm };
+};
+
+interface FqdRowItem {
+  fareBasis: string;
+  owRt: 'OW' | 'RT';
+  fareAmt: number;
+  bk: string;
+  seas: string;
+  ap: string;
+  min: string;
+  max: string;
+  resTkt: string;
+  adv: string;
+  bg: string;
+  pen: string;
+  isBusiness: boolean;
+}
+
+export const generateFareDisplay = (rawCmd: string): string => {
+  const query = parseFqdInput(rawCmd);
+  const { orig, dest, airline, travelDateStr, dateToken, year, directionFilter, cabinFilter } = query;
+
+  // 1. Calculate SYSTEM DATE (never exceeds queried travel date)
+  const now = new Date();
+  const todayDay = now.getDate();
+  const todayMonthStr = MONTHS[now.getMonth()] || 'SEP';
+  const todayYear = now.getFullYear();
+  const todayDateObj = new Date(todayYear, now.getMonth(), todayDay);
+
+  const travelDayMatch = dateToken.match(/^(\d{1,2})([A-Z]{3})/);
+  const travelDay = travelDayMatch ? parseInt(travelDayMatch[1], 10) : 30;
+  const travelMonthStr = travelDayMatch ? travelDayMatch[2] : 'SEP';
+  const travelMonthIdx = MONTHS.indexOf(travelMonthStr);
+  const travelDateObj = new Date(year, travelMonthIdx !== -1 ? travelMonthIdx : 8, travelDay);
+
+  let systemDateStr = '';
+  if (travelDateObj >= todayDateObj) {
+    systemDateStr = `${String(todayDay).padStart(2, '0')}${todayMonthStr}${String(todayYear).slice(-2)}`;
+  } else {
+    systemDateStr = `${String(travelDay).padStart(2, '0')}${travelMonthStr}${String(year).slice(-2)}`;
+  }
+
+  // 2. Sector ratio to scale fares realistically across different routes
+  // Reference route is DAC-DXB where standard economy base is 54,500
   const sectorFare = calculateSectorFare(orig, dest, false, false);
-  const baseAmt = sectorFare.base;
+  const sectorRatio = sectorFare.base / 54500;
 
-  return [
-    `FQD${orig}${dest}/A${air} - AMADEUS FARE QUOTE DISPLAY`,
-    `ROE 119.50 BDT - SYSTEM DATE 25OCT26`,
-    `-----------------------------------------------------------------------------`,
-    `LN FARE BASIS  OW/RT BDT FARE   BK SEAS AP MIN MAX RES/TKT ADV BG PEN`,
-    `01 YLRBD1      OW    ${baseAmt.toLocaleString()}  Y   --   -- --  --  1A/E         2PC +`,
-    `02 MLRBD1      OW    ${Math.round(baseAmt * 0.9).toLocaleString()}  M   --   -- --  --  1A/E         2PC +`,
-    `03 QLRBD1      OW    ${Math.round(baseAmt * 0.8).toLocaleString()}  Q   --   -- --  --  1A/E         2PC +`,
-    `04 TLRBD1      OW    ${Math.round(baseAmt * 0.7).toLocaleString()}  T   --   -- --  --  1A/E         2PC +`,
-    `05 JLRBD1      OW    ${Math.round(baseAmt * 2.5).toLocaleString()}  J   --   -- --  --  1A/E         2PC +`,
-    `-----------------------------------------------------------------------------`,
-    `FOR RULE PARAGRAPHS ENTER FQN<LINE_NO>*<RULE_CODE> (e.g. FQN1*PE)`,
-  ].join('\n');
+  const roundTo100 = (val: number): number => Math.round((val * sectorRatio) / 100) * 100;
+
+  // 3. Airline-specific fare definitions & Fare Basis codes
+  let fareItems: FqdRowItem[] = [];
+
+  const air = airline.toUpperCase();
+  const isLcc = ['FZ', 'BS', 'G9', 'VQ', '2A', 'J9', '6E', 'IX', 'SG'].includes(air);
+  const isNational = ['BG', 'SV', 'GF', 'KU', 'AI', 'MS', 'ET', 'MH', 'TG', 'UL'].includes(air);
+  const isPremium = ['EK', 'QR', 'SQ', 'TK', 'BA', 'CX', 'EY', 'LH', 'AF', 'KL', 'AC', 'JL', 'NH'].includes(air);
+
+  if (air === 'EK') {
+    // Premium Full-Service: Economy BDT 55,000 - 78,000; Business BDT 145,000 - 220,000
+    fareItems = [
+      { fareBasis: 'TLRBD1', owRt: 'OW', fareAmt: roundTo100(55200), bk: 'T', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: 'QLRBD1', owRt: 'OW', fareAmt: roundTo100(59500), bk: 'Q', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: 'VEEBD1', owRt: 'OW', fareAmt: roundTo100(63800), bk: 'V', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: 'KEEBD1', owRt: 'OW', fareAmt: roundTo100(68400), bk: 'K', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '35K', pen: '+', isBusiness: false },
+      { fareBasis: 'MLRBD1', owRt: 'OW', fareAmt: roundTo100(73200), bk: 'M', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '35K', pen: '+', isBusiness: false },
+      { fareBasis: 'YEEBD1', owRt: 'OW', fareAmt: roundTo100(78000), bk: 'Y', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: false },
+      { fareBasis: 'TRTBD1', owRt: 'RT', fareAmt: roundTo100(96500), bk: 'T', seas: dateToken, ap: '--', min: '3D', max: '3M', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: 'QEEBD1', owRt: 'RT', fareAmt: roundTo100(104000), bk: 'Q', seas: dateToken, ap: '--', min: '3D', max: '6M', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: 'YRTBD1', owRt: 'RT', fareAmt: roundTo100(128000), bk: 'Y', seas: dateToken, ap: '--', min: '--', max: '12M', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: false },
+      { fareBasis: 'OEEBD1', owRt: 'OW', fareAmt: roundTo100(148000), bk: 'O', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '40K', pen: '+', isBusiness: true },
+      { fareBasis: 'CFLBD1', owRt: 'OW', fareAmt: roundTo100(178000), bk: 'C', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: true },
+      { fareBasis: 'JFLBD1', owRt: 'OW', fareAmt: roundTo100(215000), bk: 'J', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: true },
+      { fareBasis: 'CRTBD1', owRt: 'RT', fareAmt: roundTo100(285000), bk: 'C', seas: dateToken, ap: '--', min: '3D', max: '6M', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: true },
+      { fareBasis: 'JRTBD1', owRt: 'RT', fareAmt: roundTo100(340000), bk: 'J', seas: dateToken, ap: '--', min: '3D', max: '12M', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: true },
+    ];
+  } else if (air === 'BG') {
+    // National Carrier: Economy BDT 42,000 - 58,000; Business BDT 118,000 - 165,000
+    fareItems = [
+      { fareBasis: 'TERBD1', owRt: 'OW', fareAmt: roundTo100(42500), bk: 'T', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: 'VERBD1', owRt: 'OW', fareAmt: roundTo100(45800), bk: 'V', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: 'QEEBD1', owRt: 'OW', fareAmt: roundTo100(49200), bk: 'Q', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: 'MERBD1', owRt: 'OW', fareAmt: roundTo100(52600), bk: 'M', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: 'KERBD1', owRt: 'OW', fareAmt: roundTo100(55800), bk: 'K', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: 'YOWBD1', owRt: 'OW', fareAmt: roundTo100(58000), bk: 'Y', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: false },
+      { fareBasis: 'TEEBD1', owRt: 'RT', fareAmt: roundTo100(74500), bk: 'T', seas: dateToken, ap: '--', min: '3D', max: '3M', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: 'QEEBD1', owRt: 'RT', fareAmt: roundTo100(84200), bk: 'Q', seas: dateToken, ap: '--', min: '3D', max: '6M', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: 'YRTBD1', owRt: 'RT', fareAmt: roundTo100(99500), bk: 'Y', seas: dateToken, ap: '--', min: '--', max: '12M', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: false },
+      { fareBasis: 'DEEBD1', owRt: 'OW', fareAmt: roundTo100(118000), bk: 'D', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '+', isBusiness: true },
+      { fareBasis: 'CEEBD1', owRt: 'OW', fareAmt: roundTo100(138000), bk: 'C', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: true },
+      { fareBasis: 'JFLBD1', owRt: 'OW', fareAmt: roundTo100(165000), bk: 'J', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: true },
+      { fareBasis: 'CRTBD1', owRt: 'RT', fareAmt: roundTo100(225000), bk: 'C', seas: dateToken, ap: '--', min: '3D', max: '6M', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: true },
+      { fareBasis: 'JRTBD1', owRt: 'RT', fareAmt: roundTo100(265000), bk: 'J', seas: dateToken, ap: '--', min: '3D', max: '12M', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: true },
+    ];
+  } else if (air === 'SV') {
+    // National Carrier (Saudia): Economy BDT 43,000 - 57,500; Business BDT 122,000 - 172,000
+    fareItems = [
+      { fareBasis: 'TORBD1', owRt: 'OW', fareAmt: roundTo100(43200), bk: 'T', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '1PC', pen: '+', isBusiness: false },
+      { fareBasis: 'VORBD1', owRt: 'OW', fareAmt: roundTo100(46500), bk: 'V', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '1PC', pen: '+', isBusiness: false },
+      { fareBasis: 'QEEBD1', owRt: 'OW', fareAmt: roundTo100(49800), bk: 'Q', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '+', isBusiness: false },
+      { fareBasis: 'MERBD1', owRt: 'OW', fareAmt: roundTo100(53400), bk: 'M', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '+', isBusiness: false },
+      { fareBasis: 'YOWBD1', owRt: 'OW', fareAmt: roundTo100(57500), bk: 'Y', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: false },
+      { fareBasis: 'TEEBD1', owRt: 'RT', fareAmt: roundTo100(76000), bk: 'T', seas: dateToken, ap: '--', min: '3D', max: '3M', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '+', isBusiness: false },
+      { fareBasis: 'QEEBD1', owRt: 'RT', fareAmt: roundTo100(86500), bk: 'Q', seas: dateToken, ap: '--', min: '3D', max: '6M', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '+', isBusiness: false },
+      { fareBasis: 'YRTBD1', owRt: 'RT', fareAmt: roundTo100(102000), bk: 'Y', seas: dateToken, ap: '--', min: '--', max: '12M', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: false },
+      { fareBasis: 'DERBD1', owRt: 'OW', fareAmt: roundTo100(122000), bk: 'D', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '+', isBusiness: true },
+      { fareBasis: 'CFLBD1', owRt: 'OW', fareAmt: roundTo100(145000), bk: 'C', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: true },
+      { fareBasis: 'JFLBD1', owRt: 'OW', fareAmt: roundTo100(172000), bk: 'J', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: true },
+      { fareBasis: 'CRTBD1', owRt: 'RT', fareAmt: roundTo100(230000), bk: 'C', seas: dateToken, ap: '--', min: '3D', max: '6M', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: true },
+      { fareBasis: 'JRTBD1', owRt: 'RT', fareAmt: roundTo100(275000), bk: 'J', seas: dateToken, ap: '--', min: '3D', max: '12M', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: true },
+    ];
+  } else if (air === 'FZ') {
+    // Low-cost (Flydubai): Economy BDT 32,000 - 45,000; Business BDT 110,000 - 135,000
+    fareItems = [
+      { fareBasis: 'NLIBD1', owRt: 'OW', fareAmt: roundTo100(32500), bk: 'N', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '20K', pen: '+', isBusiness: false },
+      { fareBasis: 'TLIBD1', owRt: 'OW', fareAmt: roundTo100(35200), bk: 'T', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '20K', pen: '+', isBusiness: false },
+      { fareBasis: 'QVLBD1', owRt: 'OW', fareAmt: roundTo100(38400), bk: 'Q', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: 'LVLBD1', owRt: 'OW', fareAmt: roundTo100(41500), bk: 'L', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: 'YFLBD1', owRt: 'OW', fareAmt: roundTo100(44800), bk: 'Y', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '35K', pen: '+', isBusiness: false },
+      { fareBasis: 'NRTBD1', owRt: 'RT', fareAmt: roundTo100(58000), bk: 'N', seas: dateToken, ap: '--', min: '2D', max: '1M', resTkt: '1A/E', adv: '--', bg: '20K', pen: '+', isBusiness: false },
+      { fareBasis: 'QRTBD1', owRt: 'RT', fareAmt: roundTo100(68500), bk: 'Q', seas: dateToken, ap: '--', min: '3D', max: '3M', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: 'YRTBD1', owRt: 'RT', fareAmt: roundTo100(79000), bk: 'Y', seas: dateToken, ap: '--', min: '--', max: '6M', resTkt: '1A/E', adv: '--', bg: '35K', pen: '+', isBusiness: false },
+      { fareBasis: 'IFLBD1', owRt: 'OW', fareAmt: roundTo100(110000), bk: 'I', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '40K', pen: '+', isBusiness: true },
+      { fareBasis: 'JFLBD1', owRt: 'OW', fareAmt: roundTo100(135000), bk: 'J', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '40K', pen: '-', isBusiness: true },
+      { fareBasis: 'JRTBD1', owRt: 'RT', fareAmt: roundTo100(215000), bk: 'J', seas: dateToken, ap: '--', min: '3D', max: '6M', resTkt: '1A/E', adv: '--', bg: '40K', pen: '-', isBusiness: true },
+    ];
+  } else if (air === 'BS') {
+    // Regional / Low-cost (US-Bangla): Economy BDT 33,000 - 44,500; Business BDT 105,000 - 128,000
+    fareItems = [
+      { fareBasis: 'TSVBD1', owRt: 'OW', fareAmt: roundTo100(33500), bk: 'T', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '20K', pen: '+', isBusiness: false },
+      { fareBasis: 'WSVBD1', owRt: 'OW', fareAmt: roundTo100(36000), bk: 'W', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '25K', pen: '+', isBusiness: false },
+      { fareBasis: 'QVLBD1', owRt: 'OW', fareAmt: roundTo100(39200), bk: 'Q', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: 'LVLBD1', owRt: 'OW', fareAmt: roundTo100(42000), bk: 'L', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: 'YFLBD1', owRt: 'OW', fareAmt: roundTo100(44500), bk: 'Y', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '35K', pen: '-', isBusiness: false },
+      { fareBasis: 'TRTBD1', owRt: 'RT', fareAmt: roundTo100(59500), bk: 'T', seas: dateToken, ap: '--', min: '2D', max: '1M', resTkt: '1A/E', adv: '--', bg: '20K', pen: '+', isBusiness: false },
+      { fareBasis: 'QRTBD1', owRt: 'RT', fareAmt: roundTo100(69800), bk: 'Q', seas: dateToken, ap: '--', min: '3D', max: '3M', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: 'YRTBD1', owRt: 'RT', fareAmt: roundTo100(80000), bk: 'Y', seas: dateToken, ap: '--', min: '--', max: '6M', resTkt: '1A/E', adv: '--', bg: '35K', pen: '-', isBusiness: false },
+      { fareBasis: 'CFLBD1', owRt: 'OW', fareAmt: roundTo100(105000), bk: 'C', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '40K', pen: '+', isBusiness: true },
+      { fareBasis: 'JFLBD1', owRt: 'OW', fareAmt: roundTo100(128000), bk: 'J', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '40K', pen: '-', isBusiness: true },
+      { fareBasis: 'JRTBD1', owRt: 'RT', fareAmt: roundTo100(205000), bk: 'J', seas: dateToken, ap: '--', min: '3D', max: '6M', resTkt: '1A/E', adv: '--', bg: '40K', pen: '-', isBusiness: true },
+    ];
+  } else if (air === 'G9') {
+    // Low-cost (Air Arabia): Economy BDT 32,000 - 43,500
+    fareItems = [
+      { fareBasis: 'NBA1BD', owRt: 'OW', fareAmt: roundTo100(32200), bk: 'N', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '20K', pen: '+', isBusiness: false },
+      { fareBasis: 'TBA1BD', owRt: 'OW', fareAmt: roundTo100(35000), bk: 'T', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '20K', pen: '+', isBusiness: false },
+      { fareBasis: 'QVA1BD', owRt: 'OW', fareAmt: roundTo100(38000), bk: 'Q', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: 'LVA1BD', owRt: 'OW', fareAmt: roundTo100(40800), bk: 'L', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: 'YEX1BD', owRt: 'OW', fareAmt: roundTo100(43500), bk: 'Y', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: 'TRT1BD', owRt: 'RT', fareAmt: roundTo100(57000), bk: 'T', seas: dateToken, ap: '--', min: '2D', max: '1M', resTkt: '1A/E', adv: '--', bg: '20K', pen: '+', isBusiness: false },
+      { fareBasis: 'QRT1BD', owRt: 'RT', fareAmt: roundTo100(67000), bk: 'Q', seas: dateToken, ap: '--', min: '3D', max: '3M', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: 'YRT1BD', owRt: 'RT', fareAmt: roundTo100(77500), bk: 'Y', seas: dateToken, ap: '--', min: '--', max: '6M', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+    ];
+  } else if (air === 'QR') {
+    // Premium Full-Service (Qatar Airways): Economy BDT 56,000 - 77,500; Business BDT 152,000 - 220,000
+    fareItems = [
+      { fareBasis: 'TRTBD1', owRt: 'OW', fareAmt: roundTo100(56000), bk: 'T', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: 'QCLBD1', owRt: 'OW', fareAmt: roundTo100(60500), bk: 'Q', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: 'VCLBD1', owRt: 'OW', fareAmt: roundTo100(64800), bk: 'V', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: 'SCNBD1', owRt: 'OW', fareAmt: roundTo100(69500), bk: 'S', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '35K', pen: '+', isBusiness: false },
+      { fareBasis: 'MCNBD1', owRt: 'OW', fareAmt: roundTo100(74000), bk: 'M', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '35K', pen: '+', isBusiness: false },
+      { fareBasis: 'YELBD1', owRt: 'OW', fareAmt: roundTo100(77500), bk: 'Y', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: false },
+      { fareBasis: 'TRTBD1', owRt: 'RT', fareAmt: roundTo100(98000), bk: 'T', seas: dateToken, ap: '--', min: '3D', max: '3M', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: 'QEEBD1', owRt: 'RT', fareAmt: roundTo100(106000), bk: 'Q', seas: dateToken, ap: '--', min: '3D', max: '6M', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: 'YRTBD1', owRt: 'RT', fareAmt: roundTo100(130000), bk: 'Y', seas: dateToken, ap: '--', min: '--', max: '12M', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: false },
+      { fareBasis: 'RCLBD1', owRt: 'OW', fareAmt: roundTo100(152000), bk: 'R', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '40K', pen: '+', isBusiness: true },
+      { fareBasis: 'ICNBD1', owRt: 'OW', fareAmt: roundTo100(182000), bk: 'I', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '40K', pen: '+', isBusiness: true },
+      { fareBasis: 'DCMBD1', owRt: 'OW', fareAmt: roundTo100(205000), bk: 'D', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: true },
+      { fareBasis: 'JELBD1', owRt: 'OW', fareAmt: roundTo100(220000), bk: 'J', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: true },
+      { fareBasis: 'CRTBD1', owRt: 'RT', fareAmt: roundTo100(290000), bk: 'C', seas: dateToken, ap: '--', min: '3D', max: '6M', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: true },
+      { fareBasis: 'JRTBD1', owRt: 'RT', fareAmt: roundTo100(350000), bk: 'J', seas: dateToken, ap: '--', min: '3D', max: '12M', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: true },
+    ];
+  } else if (air === 'SQ') {
+    // Singapore Airlines: Premium Full-Service
+    fareItems = [
+      { fareBasis: 'VLTBD1', owRt: 'OW', fareAmt: roundTo100(56500), bk: 'V', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: 'KLTBD1', owRt: 'OW', fareAmt: roundTo100(61000), bk: 'K', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: 'QSTBD1', owRt: 'OW', fareAmt: roundTo100(66000), bk: 'Q', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: 'MSTBD1', owRt: 'OW', fareAmt: roundTo100(72000), bk: 'M', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '35K', pen: '+', isBusiness: false },
+      { fareBasis: 'YFLBD1', owRt: 'OW', fareAmt: roundTo100(77800), bk: 'Y', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: false },
+      { fareBasis: 'VRTBD1', owRt: 'RT', fareAmt: roundTo100(99000), bk: 'V', seas: dateToken, ap: '--', min: '3D', max: '3M', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: 'QRTBD1', owRt: 'RT', fareAmt: roundTo100(108000), bk: 'Q', seas: dateToken, ap: '--', min: '3D', max: '6M', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: 'YRTBD1', owRt: 'RT', fareAmt: roundTo100(132000), bk: 'Y', seas: dateToken, ap: '--', min: '--', max: '12M', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: false },
+      { fareBasis: 'DFLBD1', owRt: 'OW', fareAmt: roundTo100(185000), bk: 'D', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: true },
+      { fareBasis: 'JFLBD1', owRt: 'OW', fareAmt: roundTo100(218000), bk: 'J', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: true },
+      { fareBasis: 'JRTBD1', owRt: 'RT', fareAmt: roundTo100(345000), bk: 'J', seas: dateToken, ap: '--', min: '3D', max: '12M', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: true },
+    ];
+  } else if (air === 'TK') {
+    // Turkish Airlines: Premium Full-Service
+    fareItems = [
+      { fareBasis: 'UEFBD1', owRt: 'OW', fareAmt: roundTo100(55500), bk: 'U', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: 'VEFBD1', owRt: 'OW', fareAmt: roundTo100(60000), bk: 'V', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: 'QEXBD1', owRt: 'OW', fareAmt: roundTo100(65000), bk: 'Q', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: 'MEXBD1', owRt: 'OW', fareAmt: roundTo100(71500), bk: 'M', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '35K', pen: '+', isBusiness: false },
+      { fareBasis: 'YPRBD1', owRt: 'OW', fareAmt: roundTo100(77200), bk: 'Y', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: false },
+      { fareBasis: 'URTBD1', owRt: 'RT', fareAmt: roundTo100(97000), bk: 'U', seas: dateToken, ap: '--', min: '3D', max: '3M', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: 'QRTBD1', owRt: 'RT', fareAmt: roundTo100(105000), bk: 'Q', seas: dateToken, ap: '--', min: '3D', max: '6M', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: 'YRTBD1', owRt: 'RT', fareAmt: roundTo100(129000), bk: 'Y', seas: dateToken, ap: '--', min: '--', max: '12M', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: false },
+      { fareBasis: 'JPRBD1', owRt: 'OW', fareAmt: roundTo100(165000), bk: 'J', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '+', isBusiness: true },
+      { fareBasis: 'CFLBD1', owRt: 'OW', fareAmt: roundTo100(198000), bk: 'C', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: true },
+      { fareBasis: 'JRTBD1', owRt: 'RT', fareAmt: roundTo100(320000), bk: 'J', seas: dateToken, ap: '--', min: '3D', max: '12M', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: true },
+    ];
+  } else if (isLcc) {
+    // Generic Low-cost / Regional Carrier
+    fareItems = [
+      { fareBasis: `T${air}1BD`, owRt: 'OW', fareAmt: roundTo100(33000), bk: 'T', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '20K', pen: '+', isBusiness: false },
+      { fareBasis: `V${air}1BD`, owRt: 'OW', fareAmt: roundTo100(36500), bk: 'V', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '25K', pen: '+', isBusiness: false },
+      { fareBasis: `Q${air}1BD`, owRt: 'OW', fareAmt: roundTo100(40000), bk: 'Q', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: `Y${air}1BD`, owRt: 'OW', fareAmt: roundTo100(44500), bk: 'Y', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: `TRT${air}1`, owRt: 'RT', fareAmt: roundTo100(58500), bk: 'T', seas: dateToken, ap: '--', min: '2D', max: '1M', resTkt: '1A/E', adv: '--', bg: '20K', pen: '+', isBusiness: false },
+      { fareBasis: `QRT${air}1`, owRt: 'RT', fareAmt: roundTo100(68000), bk: 'Q', seas: dateToken, ap: '--', min: '3D', max: '3M', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: `YRT${air}1`, owRt: 'RT', fareAmt: roundTo100(78500), bk: 'Y', seas: dateToken, ap: '--', min: '--', max: '6M', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: `JFL${air}1`, owRt: 'OW', fareAmt: roundTo100(115000), bk: 'J', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '40K', pen: '-', isBusiness: true },
+      { fareBasis: `JRT${air}1`, owRt: 'RT', fareAmt: roundTo100(185000), bk: 'J', seas: dateToken, ap: '--', min: '3D', max: '6M', resTkt: '1A/E', adv: '--', bg: '40K', pen: '-', isBusiness: true },
+    ];
+  } else if (isNational) {
+    // Generic National Carrier
+    fareItems = [
+      { fareBasis: `T${air}BD1`, owRt: 'OW', fareAmt: roundTo100(43000), bk: 'T', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: `V${air}BD1`, owRt: 'OW', fareAmt: roundTo100(46500), bk: 'V', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: `Q${air}BD1`, owRt: 'OW', fareAmt: roundTo100(50000), bk: 'Q', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: `M${air}BD1`, owRt: 'OW', fareAmt: roundTo100(54000), bk: 'M', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: `Y${air}BD1`, owRt: 'OW', fareAmt: roundTo100(57800), bk: 'Y', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: false },
+      { fareBasis: `TRT${air}1`, owRt: 'RT', fareAmt: roundTo100(75000), bk: 'T', seas: dateToken, ap: '--', min: '3D', max: '3M', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: `QRT${air}1`, owRt: 'RT', fareAmt: roundTo100(85000), bk: 'Q', seas: dateToken, ap: '--', min: '3D', max: '6M', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: `YRT${air}1`, owRt: 'RT', fareAmt: roundTo100(101000), bk: 'Y', seas: dateToken, ap: '--', min: '--', max: '12M', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: false },
+      { fareBasis: `C${air}BD1`, owRt: 'OW', fareAmt: roundTo100(135000), bk: 'C', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: true },
+      { fareBasis: `J${air}BD1`, owRt: 'OW', fareAmt: roundTo100(168000), bk: 'J', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: true },
+      { fareBasis: `CRT${air}1`, owRt: 'RT', fareAmt: roundTo100(220000), bk: 'C', seas: dateToken, ap: '--', min: '3D', max: '6M', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: true },
+      { fareBasis: `JRT${air}1`, owRt: 'RT', fareAmt: roundTo100(270000), bk: 'J', seas: dateToken, ap: '--', min: '3D', max: '12M', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: true },
+    ];
+  } else {
+    // Generic Premium Full-Service Carrier
+    fareItems = [
+      { fareBasis: `T${air}BD1`, owRt: 'OW', fareAmt: roundTo100(55500), bk: 'T', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: `Q${air}BD1`, owRt: 'OW', fareAmt: roundTo100(60000), bk: 'Q', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: `V${air}BD1`, owRt: 'OW', fareAmt: roundTo100(64500), bk: 'V', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: `M${air}BD1`, owRt: 'OW', fareAmt: roundTo100(72500), bk: 'M', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '35K', pen: '+', isBusiness: false },
+      { fareBasis: `Y${air}BD1`, owRt: 'OW', fareAmt: roundTo100(77500), bk: 'Y', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: false },
+      { fareBasis: `TRT${air}1`, owRt: 'RT', fareAmt: roundTo100(97500), bk: 'T', seas: dateToken, ap: '--', min: '3D', max: '3M', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: `QRT${air}1`, owRt: 'RT', fareAmt: roundTo100(105500), bk: 'Q', seas: dateToken, ap: '--', min: '3D', max: '6M', resTkt: '1A/E', adv: '--', bg: '30K', pen: '+', isBusiness: false },
+      { fareBasis: `YRT${air}1`, owRt: 'RT', fareAmt: roundTo100(129500), bk: 'Y', seas: dateToken, ap: '--', min: '--', max: '12M', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: false },
+      { fareBasis: `C${air}BD1`, owRt: 'OW', fareAmt: roundTo100(175000), bk: 'C', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: true },
+      { fareBasis: `J${air}BD1`, owRt: 'OW', fareAmt: roundTo100(215000), bk: 'J', seas: dateToken, ap: '--', min: '--', max: '--', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: true },
+      { fareBasis: `CRT${air}1`, owRt: 'RT', fareAmt: roundTo100(280000), bk: 'C', seas: dateToken, ap: '--', min: '3D', max: '6M', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: true },
+      { fareBasis: `JRT${air}1`, owRt: 'RT', fareAmt: roundTo100(340000), bk: 'J', seas: dateToken, ap: '--', min: '3D', max: '12M', resTkt: '1A/E', adv: '--', bg: '2PC', pen: '-', isBusiness: true },
+    ];
+  }
+
+  // 4. Apply optional filters (/IO, /IR, /KC, /KY)
+  if (directionFilter) {
+    fareItems = fareItems.filter((f) => f.owRt === directionFilter);
+  }
+  if (cabinFilter === 'BUSINESS') {
+    fareItems = fareItems.filter((f) => f.isBusiness);
+  } else if (cabinFilter === 'ECONOMY') {
+    fareItems = fareItems.filter((f) => !f.isBusiness);
+  }
+
+  // 5. Format Amadeus lines
+  const { tpm, mpm } = getSectorMiles(orig, dest);
+  const outLines: string[] = [];
+
+  const displayCmd = rawCmd.toUpperCase().trim();
+  outLines.push(displayCmd);
+  outLines.push(`ROE 119.50 BDT - SYSTEM DATE ${systemDateStr}`);
+  outLines.push(`${travelDateStr}**${travelDateStr}/${air} ${orig}${dest}/NSP;EH/TPM  ${String(tpm).padStart(4, ' ')}/MPM  ${String(mpm).padStart(4, ' ')}`);
+  outLines.push(`-----------------------------------------------------------------------------`);
+  outLines.push(`LN FARE BASIS  OW/RT BDT FARE   BK SEAS  AP MIN MAX RES/TKT ADV BG  PEN`);
+
+  fareItems.forEach((item, index) => {
+    const lnStr = String(index + 1).padStart(2, '0');
+    const fbStr = item.fareBasis.padEnd(11, ' ');
+    const owRtStr = item.owRt.padEnd(5, ' ');
+    const fareStr = String(item.fareAmt).padStart(9, ' ');
+    const bkStr = item.bk.padEnd(2, ' ');
+    const seasStr = item.seas.padEnd(5, ' ');
+    const apStr = item.ap.padEnd(2, ' ');
+    const minStr = item.min.padEnd(3, ' ');
+    const maxStr = item.max.padEnd(3, ' ');
+    const resStr = item.resTkt.padEnd(7, ' ');
+    const advStr = item.adv.padEnd(3, ' ');
+    const bgStr = item.bg.padEnd(4, ' ');
+    const penStr = item.pen;
+
+    outLines.push(`${lnStr} ${fbStr} ${owRtStr} ${fareStr}  ${bkStr} ${seasStr} ${apStr} ${minStr} ${maxStr} ${resStr} ${advStr} ${bgStr} ${penStr}`);
+  });
+
+  outLines.push(`-----------------------------------------------------------------------------`);
+  outLines.push(`FOR RULE PARAGRAPHS ENTER FQN<LINE_NO>*<RULE_CODE> (e.g. FQN1*PE)`);
+
+  return outLines.join('\n');
 };
 
 // ======================================================================

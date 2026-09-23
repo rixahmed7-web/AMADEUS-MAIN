@@ -9,6 +9,8 @@ import {
   convertCurrency,
   parseAnInput,
   calculateSectorFare,
+  MONTHS,
+  cleanGdsDate,
 } from './flightScheduleGenerator';
 import { AIRLINES } from '../data/gdsDatabase';
 import { buildItrReceiptData, formatItrTerminalOutput } from './itrReceipt';
@@ -29,6 +31,99 @@ export interface CommandResult {
   itrData?: ItrReceiptData;
 }
 
+// System Date helper for Amadeus standard timestamps
+export const getTodayGdsDate = (): { dateStr: string; dateToken: string; year: number } => {
+  const now = new Date();
+  const d = String(now.getDate()).padStart(2, '0');
+  const m = MONTHS[now.getMonth()] || 'SEP';
+  const y = String(now.getFullYear()).slice(-2);
+  return {
+    dateStr: `${d}${m}${y}`, // e.g. "23SEP26"
+    dateToken: `${d}${m}`,   // e.g. "23SEP"
+    year: now.getFullYear(), // e.g. 2026
+  };
+};
+
+/**
+ * Calculates dynamic Ticketing Time Limit date according to Amadeus and airline rules:
+ * - Case 1 (Departure is within 1 to 2 days): Time limit must be given for TODAY or within 12 hours (e.g. TK OK<TODAY>/DAC360)
+ * - Case 2 (Departure is 3 to 6 days away): Time limit should be set to TOMORROW (1 day after current booking date)
+ * - Case 3 (Departure is 7+ days / far away, e.g. 30SEP): Standard airline advance booking buffer of 2 to 3 days (e.g. booked 23SEP -> 25SEP)
+ * - Case 4: The Time Limit date must NEVER exceed the flight departure date.
+ */
+export const calculateTicketingTimeLimit = (
+  segments: BookedSegment[],
+  lastAvailabilityDate?: string
+): string => {
+  const now = new Date();
+  const todayDay = now.getDate();
+  const todayMonthIdx = now.getMonth();
+  const todayYear = now.getFullYear();
+  const todayDateObj = new Date(todayYear, todayMonthIdx, todayDay);
+
+  // Determine segment departure date
+  let targetDateStr = '';
+  if (segments && segments.length > 0 && segments[0].date) {
+    targetDateStr = segments[0].date;
+  } else if (lastAvailabilityDate) {
+    targetDateStr = lastAvailabilityDate;
+  }
+
+  let depDateObj: Date;
+
+  if (targetDateStr) {
+    const match = targetDateStr.toUpperCase().match(/^(\d{1,2})([A-Z]{3})(\d{2,4})?/);
+    if (match) {
+      const day = parseInt(match[1], 10);
+      const mIdx = MONTHS.indexOf(match[2]);
+      if (mIdx !== -1) {
+        let yr = todayYear;
+        if (match[3]) {
+          yr = match[3].length === 2 ? 2000 + parseInt(match[3], 10) : parseInt(match[3], 10);
+        } else if (mIdx < todayMonthIdx - 2) {
+          yr = todayYear + 1;
+        }
+        depDateObj = new Date(yr, mIdx, day);
+      } else {
+        depDateObj = new Date(todayYear, todayMonthIdx, todayDay + 14);
+      }
+    } else {
+      depDateObj = new Date(todayYear, todayMonthIdx, todayDay + 14);
+    }
+  } else {
+    // Default departure date if no segments booked yet: far away (+14 days)
+    depDateObj = new Date(todayYear, todayMonthIdx, todayDay + 14);
+  }
+
+  const msPerDay = 1000 * 60 * 60 * 24;
+  const diffDays = Math.round((depDateObj.getTime() - todayDateObj.getTime()) / msPerDay);
+
+  let limitDateObj: Date;
+
+  if (diffDays <= 2) {
+    // Case 1: Departure within 1-2 days -> TODAY
+    limitDateObj = new Date(todayDateObj);
+  } else if (diffDays <= 6) {
+    // Case 2: Departure 3-6 days away -> TOMORROW (1 day after booking date)
+    limitDateObj = new Date(todayDateObj);
+    limitDateObj.setDate(limitDateObj.getDate() + 1);
+  } else {
+    // Case 3: Departure >= 7 days away -> Standard 2-day buffer from booking date
+    // e.g. booked on 23SEP -> 25SEP: TK OK25SEP/DAC360
+    limitDateObj = new Date(todayDateObj);
+    limitDateObj.setDate(limitDateObj.getDate() + 2);
+  }
+
+  // Case 4: The Time Limit date must NEVER exceed the flight departure date
+  if (limitDateObj.getTime() > depDateObj.getTime()) {
+    limitDateObj = new Date(depDateObj);
+  }
+
+  const limitDay = String(limitDateObj.getDate()).padStart(2, '0');
+  const limitMonth = MONTHS[limitDateObj.getMonth()] || 'SEP';
+  return `${limitDay}${limitMonth}`;
+};
+
 // Global in-memory ticket sales database for TJQ, TWD, and TRDC
 export const ticketSalesDatabase: TicketSaleRecord[] = [
   {
@@ -36,7 +131,7 @@ export const ticketSalesDatabase: TicketSaleRecord[] = [
     pnrLocator: 'X7K9LP',
     passengerName: 'HOSSAIN/ABUL MR',
     airline: 'QR',
-    issueDate: '20MAY26',
+    issueDate: `${String(new Date().getDate()).padStart(2, '0')}${MONTHS[new Date().getMonth()] || 'SEP'}${String(new Date().getFullYear()).slice(-2)}`,
     officeId: 'DAC360',
     grossFare: 85000,
     tax: 14500,
@@ -84,8 +179,11 @@ export const formatPnrDisplay = (session: PnrSession): string => {
 
   const pnr = session.pnrLocator || 'WORK AREA';
   const now = new Date();
-  const dateStr = '20MAY26';
-  const timeStr = '0830Z';
+  const todayInfo = getTodayGdsDate();
+  const dateStr = todayInfo.dateStr;
+  const hours = String(now.getUTCHours()).padStart(2, '0');
+  const mins = String(now.getUTCMinutes()).padStart(2, '0');
+  const timeStr = `${hours}${mins}Z`;
 
   const lines: string[] = [];
   lines.push('--- RLR ---');
@@ -169,8 +267,8 @@ export const formatPnrDisplay = (session: PnrSession): string => {
 // Semicolon-chained command processor
 export const executeGdsCommand = (
   rawInput: string,
-  currentSession: PnrSession,
-  savedPnrs: Map<string, PnrSession>
+  currentSession: PnrSession = createInitialSession(),
+  savedPnrs: Map<string, PnrSession> = new Map()
 ): CommandResult => {
   const trimmed = rawInput.trim();
   if (!trimmed) {
@@ -209,8 +307,8 @@ export const executeGdsCommand = (
 
 const executeSingleGdsCommand = (
   rawInput: string,
-  currentSession: PnrSession,
-  savedPnrs: Map<string, PnrSession>
+  currentSession: PnrSession = createInitialSession(),
+  savedPnrs: Map<string, PnrSession> = new Map()
 ): CommandResult => {
   const input = rawInput.trim();
   const upper = input.toUpperCase();
@@ -265,7 +363,7 @@ const executeSingleGdsCommand = (
     }
   }
 
-  // 1. Availability: AN (e.g. AN20MAYDACLHR/AQR, AN15OCTDACDXB, AN25DECDACJFK/AEK, AN25OCTDACJED/ASV)
+  // 1. Availability: AN (e.g. AN30SEPDACLHR/AQR, AN15OCTDACDXB, AN25DECDACJFK/AEK, AN25OCTDACJED/ASV)
   if (upper.startsWith('AN')) {
     const { orig, dest, date, airlineFilter } = parseAnInput(input);
     const { options, displayText } = generateAvailability(date, orig, dest, airlineFilter);
@@ -281,7 +379,7 @@ const executeSingleGdsCommand = (
     };
   }
 
-  // 1b. Timetable Search: TN (e.g. TN20SEPDACSIN/ABG, TNDACCCU/ABG, TNDACCCU, TN20MAYDACLHR)
+  // 1b. Timetable Search: TN (e.g. TN20SEPDACSIN/ABG, TNDACCCU/ABG, TNDACCCU, TN30SEPDACLHR)
   if (upper.startsWith('TN')) {
     return {
       output: generateTimetable(input),
@@ -330,6 +428,11 @@ const executeSingleGdsCommand = (
     const orig = firstSeg?.origin || 'DAC';
     const dest = currentSession.segments[currentSession.segments.length - 1]?.destination || 'LHR';
 
+    const today = getTodayGdsDate();
+    const segDate = firstSeg?.date || today.dateToken;
+    const nvbStr = `${segDate}${String(today.year).slice(-2)}`;
+    const nvaStr = `${segDate}${String(today.year + 1).slice(-2)}`;
+
     const output = [
       `--- TST DISPLAY 00001 ---`,
       `PAX: 1.${firstPax}`,
@@ -337,7 +440,7 @@ const executeSingleGdsCommand = (
       `TAX : BDT 2000BD BDT 7500QA BDT 8000GB BDT 5000XT`,
       `TOTAL: BDT ${p.total.toLocaleString()}`,
       `FARE CALC: ${orig} ${air} ${dest} 804.82 NUC END ROE 119.50`,
-      `NVB: 20MAY26 NVA: 20MAY27 BG: 2PC`,
+      `NVB: ${nvbStr} NVA: ${nvaStr} BG: 2PC`,
       `STATUS: VALIDATED FOR ISSUANCE (TTP)`,
     ].join('\n');
 
@@ -511,8 +614,9 @@ const executeSingleGdsCommand = (
 
   // 4. Flight Planned Info: DO (e.g. DO1, DO 1, DO)
   if (upper.startsWith('DO')) {
+    const today = getTodayGdsDate();
     const output = [
-      `*A PLANNED FLIGHT INFO*                 QR9709  70 WE 20MAY26`,
+      `*A PLANNED FLIGHT INFO*                 QR9709  70 WE ${today.dateStr}`,
       `  QRAPT ARR   DY DEP   DY CLASS/MEAL    EQP   GRND  EFT   TTL`,
       `  DOH         0755  WE JCDIRPYBHKM/-    777         7:30`,
       `  LHR   1325  WE       LVSNQTOW/-                         7:30`,
@@ -538,9 +642,9 @@ const executeSingleGdsCommand = (
 
   // 5. Sell Segment:
   // Format A (from Availability): SS<SEATS><CLASS><LINE_NO> (e.g. SS1Y1, SS2J1, SS1M2)
-  // Format B (direct entry): SS <AIRLINE><FLT> <CLASS> <DATE> <PAIR> <STATUS> (e.g. SS QR639 Y 20MAY DACDOH HK1)
+  // Format B (direct entry): SS <AIRLINE><FLT> <CLASS> <DATE> <PAIR> <STATUS> (e.g. SS QR639 Y 30SEP DACDOH HK1)
   if (upper.startsWith('SS')) {
-    // Check Format B: Direct entry e.g. SS QR639 Y 20MAY DACDOH HK1 or SS BG084 Y 20SEP DACSIN HK1
+    // Check Format B: Direct entry e.g. SS QR639 Y 30SEP DACDOH HK1 or SS BG084 Y 20SEP DACSIN HK1
     const directMatch = upper.match(/^SS\s+([A-Z0-9]{2})\s*(\d+)\s+([A-Z])\s+(\d{1,2}[A-Z]{3})\s+([A-Z]{3})([A-Z]{3})\s+([A-Z0-9]+)$/);
     if (directMatch) {
       const air = directMatch[1];
@@ -592,7 +696,8 @@ const executeSingleGdsCommand = (
     // Look up in last availability or default to standard QR DAC-LHR
     let flightOpt = currentSession.lastAvailability?.find((f) => f.lineNum === lineNum);
     if (!flightOpt) {
-      const fallback = generateAvailability('20MAY', 'DAC', 'LHR');
+      const today = getTodayGdsDate();
+      const fallback = generateAvailability(today.dateToken, 'DAC', 'LHR');
       flightOpt = fallback.options.find((f) => f.lineNum === lineNum) || fallback.options[0];
     }
 
@@ -899,23 +1004,46 @@ const executeSingleGdsCommand = (
     };
   }
 
-  // 9. Ticketing Arrangement: TK (e.g. TKOK, TKTL20MAY)
+  // 9. Ticketing Arrangement: TK (e.g. TKOK, TK OK, TKTL28SEP, TK TL 28SEP)
   if (upper.startsWith('TK')) {
-    let arrangement = 'OK';
-    if (upper.startsWith('TKTL')) {
-      arrangement = `TL${upper.substring(4)}` || 'TL20MAY';
-    } else if (upper.startsWith('TKOK')) {
-      arrangement = 'OK20MAY';
+    const rawRest = upper.substring(2).trim();
+    const dynamicDate = calculateTicketingTimeLimit(
+      currentSession?.segments || [],
+      currentSession?.lastAvailability?.[0]?.date
+    );
+
+    let arrangement = '';
+
+    // Check for TKTL or TK TL (Manual Time Limit)
+    if (upper.startsWith('TKTL') || rawRest.startsWith('TL')) {
+      const tlDateMatch = upper.match(/^TK\s*TL\s*(\d{1,2}[A-Z]{3}(\d{2,4})?)/);
+      if (tlDateMatch) {
+        const manualDate = cleanGdsDate(tlDateMatch[1]);
+        arrangement = `TL${manualDate}`;
+      } else {
+        // Plain TKTL without date -> use dynamic calculated date
+        arrangement = `TL${dynamicDate}`;
+      }
+    } else if (upper.startsWith('TKOK') || rawRest.startsWith('OK') || rawRest === '') {
+      // Matches: TKOK, TK OK, TKOK25SEP, TK OK 25SEP, plain TK
+      const okDateMatch = upper.match(/^TK\s*OK\s*(\d{1,2}[A-Z]{3}(\d{2,4})?)/);
+      if (okDateMatch) {
+        const manualDate = cleanGdsDate(okDateMatch[1]);
+        arrangement = `OK${manualDate}`;
+      } else {
+        // Dynamic calculated date for TKOK / TK OK
+        arrangement = `OK${dynamicDate}`;
+      }
     } else {
-      arrangement = upper.substring(2).trim() || 'OK20MAY';
+      arrangement = rawRest;
     }
 
     const updated = {
-      ...currentSession,
+      ...(currentSession || createInitialSession()),
       ticketingArrangement: arrangement,
     };
     return {
-      output: ` 1. TK ${arrangement}/${updated.officeId}`,
+      output: `1. TK ${arrangement}/${updated.officeId || 'DAC360'}`,
       updatedSession: updated,
     };
   }
@@ -1176,6 +1304,8 @@ const executeSingleGdsCommand = (
       ];
     }
 
+    const today = getTodayGdsDate();
+
     if (sessionToIssue.segments.length === 0) {
       sessionToIssue.segments = [
         {
@@ -1183,7 +1313,7 @@ const executeSingleGdsCommand = (
           airline: 'TK',
           flightNumber: '144',
           bookingClass: 'Y',
-          date: '20MAY',
+          date: today.dateToken,
           origin: 'DAC',
           destination: 'IST',
           status: 'HK1',
@@ -1200,7 +1330,7 @@ const executeSingleGdsCommand = (
           'OK ETICKET ISSUED',
           ...currentSession.ticketNumbers.map(
             (tkt, idx) =>
-              `FA PAX ${tkt}/ET${currentSession.segments[0]?.airline || 'TK'}/BDT${currentSession.pricing?.total || 107000}/20MAY26/${currentSession.officeId || 'DAC360'}/21368575/P${idx + 1}`
+              `FA PAX ${tkt}/ET${currentSession.segments[0]?.airline || 'TK'}/BDT${currentSession.pricing?.total || 107000}/${today.dateStr}/${currentSession.officeId || 'DAC360'}/21368575/P${idx + 1}`
           ),
           'TKT ISSUED / OK',
         ].join('\n'),
@@ -1251,7 +1381,7 @@ const executeSingleGdsCommand = (
         pnrLocator: updated.pnrLocator || 'XFV45T',
         passengerName: paxName,
         airline: airCode,
-        issueDate: '20MAY26',
+        issueDate: today.dateStr,
         officeId: updated.officeId || 'DAC360',
         grossFare: gross,
         tax: Math.round(gross * 0.15),
@@ -1268,7 +1398,7 @@ const executeSingleGdsCommand = (
       `OK ETICKET ISSUED`,
       ...ticketNumbers.map(
         (tkt, idx) =>
-          `FA PAX ${tkt}/ET${airCode}/BDT${totalAmount}/20MAY26/${updated.officeId || 'DAC360'}/21368575/P${idx + 1}`
+          `FA PAX ${tkt}/ET${airCode}/BDT${totalAmount}/${today.dateStr}/${updated.officeId || 'DAC360'}/21368575/P${idx + 1}`
       ),
       `TKT ISSUED / OK`,
     ];
@@ -1283,11 +1413,12 @@ const executeSingleGdsCommand = (
     };
   }
 
-  // 15b. Daily TINS Sales Report: TJQ (e.g. TJQ, TJQ/D-10SEP, TJQ/D-20MAY)
+  // 15b. Daily TINS Sales Report: TJQ (e.g. TJQ, TJQ/D-10SEP, TJQ/D-30SEP)
   if (upper.startsWith('TJQ')) {
+    const today = getTodayGdsDate();
     const lines: string[] = [];
     lines.push(`TJQ - TINS DAILY SALES REPORT FOR ${currentSession.officeId} / AGT ${currentSession.agentDuty}`);
-    lines.push(`DATE: 20MAY26    CURRENCY: BDT`);
+    lines.push(`DATE: ${today.dateStr}    CURRENCY: BDT`);
     lines.push(`------------------------------------------------------------------------------------------------`);
     lines.push(`AGT  DOC NUMBER       PAX NAME                  GROSS FARE       COMM      NET AMNT  STAT`);
     lines.push(`------------------------------------------------------------------------------------------------`);
@@ -1347,16 +1478,20 @@ const executeSingleGdsCommand = (
     const base = sale?.grossFare ? Math.round(sale.grossFare * 0.85) : (currentSession.pricing?.baseFare || 85000);
     const tax = tot - base;
 
+    const today = getTodayGdsDate();
+    const flightDate = currentSession.segments[0]?.date || today.dateToken;
+    const issueDateStr = sale?.issueDate || today.dateStr;
+
     const lines = [
       `TWD/TKT-${tktNum}`,
       `ELECTRONIC TICKET RECORD - TWD`,
       `INV: ${sale?.officeId || currentSession.officeId}    RLOC: 1A/${sale?.pnrLocator || currentSession.pnrLocator || 'X7K9LP'}`,
       `NAME: ${paxName}`,
-      `TKT: ${tktNum}    ISS: 20MAY26    IATA: 21368575`,
+      `TKT: ${tktNum}    ISS: ${issueDateStr}    IATA: 21368575`,
       `-----------------------------------------------------------------------------`,
       `CPN A/L FLT  CLS DATE   BRD OFF TIME  ST F/B      STAT  NVB   NVA   BG`,
-      ` 1  ${air}  639  Y   20MAY  DAC DOH 0410  OK YLRBD1   ${isVoid ? 'VOID' : 'OPEN'} 20MAY 20MAY 2PC`,
-      ` 2  ${air}  701  Y   20MAY  DOH LHR 0815  OK YLRBD1   ${isVoid ? 'VOID' : 'OPEN'} 20MAY 20MAY 2PC`,
+      ` 1  ${air}  639  Y   ${flightDate}  DAC DOH 0410  OK YLRBD1   ${isVoid ? 'VOID' : 'OPEN'} ${flightDate} ${flightDate} 2PC`,
+      ` 2  ${air}  701  Y   ${flightDate}  DOH LHR 0815  OK YLRBD1   ${isVoid ? 'VOID' : 'OPEN'} ${flightDate} ${flightDate} 2PC`,
       `-----------------------------------------------------------------------------`,
       `FARE        : BDT ${base.toLocaleString()}`,
       `TAX/FEE/CHG : BDT ${tax.toLocaleString()}XT (BD2000 QA7500 GB5000)`,
@@ -1816,7 +1951,7 @@ const executeSingleGdsCommand = (
       `AMADEUS SELLING PLATFORM CONNECT - TRAINING COMMAND REFERENCE`,
       `-----------------------------------------------------------------------------`,
       `1. AVAILABILITY & FARE SEARCH:`,
-      `   AN<DATE><ORIG><DEST>/A<AIRLINE>   : Flight Availability (e.g. AN20MAYDACLHR/AQR)`,
+      `   AN<DATE><ORIG><DEST>/A<AIRLINE>   : Flight Availability (e.g. AN30SEPDACLHR/AQR)`,
       `   FXD<ORIG>/D<DATE><DEST>           : Lowest Fare Search (e.g. FXDDAC/D20NOVJFK)`,
       `   FXDDAC/D20NOVJFK/D19DECDAC//AEK   : Round-Trip Fare Search with Airline Filter`,
       `   FXZ<OPTION_NO>                    : Book Option from Fare Search (e.g. FXZ1)`,
@@ -1835,7 +1970,7 @@ const executeSingleGdsCommand = (
       `   NM1<ADULT>(INF <NAME>/<TITLE>/DOB): Infant (e.g. NM1HOSSAIN/ABUL MR(INF HASAN/MSTR/25FEB22))`,
       `   SS<SEATS><CLASS><LINE>            : Sell from AN (e.g. SS1Y1, SS2J1)`,
       `   AP <CONTACT>                      : Contact (e.g. AP SHOHOJ 01958658524 REF KARIM)`,
-      `   TKOK / TKTL<DATE>                 : Ticketing Limit (e.g. TKOK, TKTL20MAY)`,
+      `   TKOK / TKTL<DATE>                 : Ticketing Limit (e.g. TKOK, TKTL28SEP)`,
       `   RF <NAME>                         : Received From (e.g. RF KARIM or RFKARIM;ER)`,
       `   ER / ET                           : End & Retrieve (generates 6-letter PNR)`,
       `   IR                                : Ignore and Retrieve stored PNR`,

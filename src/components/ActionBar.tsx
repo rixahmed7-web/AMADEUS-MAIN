@@ -83,7 +83,7 @@ export const ActionBar: React.FC<ActionBarProps> = ({
               type="text"
               value={actionInput}
               onChange={(e) => setActionInput(e.target.value)}
-              placeholder="Enter an action (e.g. 'AN20MAYDACLHR' or 'RT')"
+              placeholder="Enter an action (e.g. 'AN30SEPDACLHR' or 'RT')"
               className="w-full h-[28px] px-3 text-xs bg-white text-[#222222] border border-[#b8c7dc] rounded-[3px] focus:outline-none focus:border-[#005eb8] focus:ring-1 focus:ring-[#005eb8] placeholder-[#767676]"
             />
           </form>
@@ -153,9 +153,9 @@ export const ActionBar: React.FC<ActionBarProps> = ({
           {/* Quick GDS Command Shortcuts */}
           <div className="hidden md:flex items-center pl-2 space-x-1 text-[#4f6485] mb-1">
             <button
-              onClick={() => onExecuteAction('AN20MAYDACLHR/AQR')}
+              onClick={() => onExecuteAction('AN30SEPDACLHR/AQR')}
               className="px-1.5 py-0.5 hover:bg-white rounded-xs transition-colors cursor-pointer text-[11px] font-mono border border-transparent hover:border-[#ccd7e6]"
-              title="Availability: AN20MAYDACLHR/AQR"
+              title="Availability: AN30SEPDACLHR/AQR"
             >
               AN
             </button>

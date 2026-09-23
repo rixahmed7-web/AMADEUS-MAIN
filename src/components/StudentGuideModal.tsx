@@ -26,7 +26,7 @@ export const StudentGuideModal: React.FC<StudentGuideModalProps> = ({
     {
       step: 1,
       title: 'Flight Availability',
-      command: 'AN20MAYDACLHR/AQR',
+      command: 'AN30SEPDACLHR/AQR',
       syntax: 'AN<DATE><DEP><ARR>/A<AIRLINE>',
       description: 'Displays multi-column seat availability for Qatar Airways from Dhaka to London.',
     },

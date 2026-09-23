@@ -1,5 +1,6 @@
 import { ItrFlightSegment, ItrReceiptData, ItrPassengerDetail, ItrBaggageAllowance, PnrSession, TicketSaleRecord } from '../types';
 import { AIRLINES, AIRPORTS } from '../data/gdsDatabase';
+import { MONTHS } from './flightScheduleGenerator';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 
@@ -476,6 +477,11 @@ export const buildItrReceiptData = (
   const allTicketNumbers = paxDetails.map((p) => p.ticketNumber);
 
   // 4. Resolve segments
+  const now = new Date();
+  const defaultDay = String(now.getDate()).padStart(2, '0');
+  const defaultMonth = MONTHS[now.getMonth()] || 'SEP';
+  const defaultDateToken = `${defaultDay}${defaultMonth}`;
+
   const segments: ItrFlightSegment[] = [];
   if (session.segments && session.segments.length > 0) {
     session.segments.forEach((seg, idx) => {
@@ -489,7 +495,7 @@ export const buildItrReceiptData = (
         airlineName: segAir.name,
         flightNumber: seg.flightNumber,
         bookingClass: seg.bookingClass || 'Y',
-        date: seg.date || '20MAY',
+        date: seg.date || defaultDateToken,
         origin: seg.origin,
         originName: origAirport ? `${origAirport.city} (${origAirport.code})` : seg.origin,
         originTerminal: origAirport?.terminal || (seg.origin === 'DAC' ? '1' : '2'),
@@ -499,8 +505,8 @@ export const buildItrReceiptData = (
         depTime: seg.depTime || '0835',
         arrTime: seg.arrTime || '1130',
         status: 'OK / HK1',
-        nvb: seg.date || '20MAY',
-        nva: seg.date || '20MAY',
+        nvb: seg.date || defaultDateToken,
+        nva: seg.date || defaultDateToken,
         baggage: seg.bookingClass === 'J' || seg.bookingClass === 'C' ? '2PC (32KG)' : '2PC (23KG)',
         equip: seg.equip || 'Boeing 737-800',
       });
@@ -513,7 +519,7 @@ export const buildItrReceiptData = (
       airlineName: airlineObj.name,
       flightNumber: '343',
       bookingClass: 'Y',
-      date: '20MAY',
+      date: defaultDateToken,
       origin: 'DAC',
       originName: 'Dhaka (DAC)',
       originTerminal: '1',
@@ -523,8 +529,8 @@ export const buildItrReceiptData = (
       depTime: '0835',
       arrTime: '1130',
       status: 'OK / HK1',
-      nvb: '20MAY',
-      nva: '20MAY',
+      nvb: defaultDateToken,
+      nva: defaultDateToken,
       baggage: '2PC (23KG)',
       equip: 'Boeing 737-800',
     });
@@ -586,7 +592,6 @@ export const buildItrReceiptData = (
   const pnrLocator = session.pnrLocator || saleMatch?.pnrLocator || '0A4TBG';
 
   // Live booking date in GDS standard format
-  const now = new Date();
   const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
   const dayStr = String(now.getDate()).padStart(2, '0');
   const monthStr = months[now.getMonth()];
