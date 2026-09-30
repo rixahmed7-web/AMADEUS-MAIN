@@ -387,7 +387,15 @@ export default function App() {
       <ItrReceiptModal
         isOpen={isItrModalOpen}
         data={activeItrData}
-        onClose={() => setIsItrModalOpen(false)}
+        onClose={() => {
+          setIsItrModalOpen(false);
+          setTimeout(() => {
+            const cliInput = document.getElementById('gds-cli-input') as HTMLInputElement | null;
+            if (cliInput) {
+              cliInput.focus();
+            }
+          }, 50);
+        }}
         onSendEmail={(email) => handleExecuteCommand(`ITR-EML-${email}`)}
       />
     </div>

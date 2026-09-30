@@ -39,6 +39,49 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
 
   if (!isOpen || !data) return null;
 
+  // Reliable Modal Close Handler: Re-enables background scrolling and returns focus to top CLI input
+  const handleClose = () => {
+    if (typeof document !== 'undefined') {
+      document.body.style.overflow = '';
+      const modalEl = document.getElementById('itr-receipt-modal');
+      if (modalEl) {
+        modalEl.style.display = 'none';
+      }
+    }
+    onClose();
+    setTimeout(() => {
+      const cliInput = document.getElementById('gds-cli-input') as HTMLInputElement | null;
+      if (cliInput) {
+        cliInput.focus();
+      }
+    }, 40);
+  };
+
+  // Keyboard Escape navigation & body overflow lock
+  React.useEffect(() => {
+    if (!isOpen) return;
+
+    if (typeof document !== 'undefined') {
+      document.body.style.overflow = 'hidden';
+    }
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' || e.key === 'Esc') {
+        e.preventDefault();
+        handleClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      if (typeof document !== 'undefined') {
+        document.body.style.overflow = '';
+      }
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen]);
+
   const handlePrintClick = () => {
     window.print();
   };
@@ -55,28 +98,86 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
     }, 3500);
   };
 
+  // Reliable Fail-Safe PDF Download Handler using html2pdf.js
   const handleDirectPdfDownload = async () => {
-    try {
-      setIsGeneratingPdf(true);
-      const element = receiptCardRef.current || document.getElementById('itr-printable-receipt');
-      const pnr = data.pnrLocator || 'TKT';
-      const opt = {
-        margin: [4, 4, 4, 4],
-        filename: `E-Ticket_${pnr}_${Date.now()}.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, logging: false },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-      };
+    setIsGeneratingPdf(true);
+    const currentPNR = data?.pnrLocator || 'AMADEUS';
+    const element =
+      document.getElementById('ticketPrintArea') ||
+      document.querySelector('.ticket-card-content') ||
+      receiptCardRef.current ||
+      document.getElementById('itr-printable-receipt');
 
-      if (element && typeof window !== 'undefined' && window.html2pdf) {
-        await window.html2pdf().set(opt).from(element).save();
-      } else {
-        await downloadItrPdfFile(data, element);
-      }
-    } catch (err) {
-      console.error('PDF direct download error:', err);
-    } finally {
+    if (!element) {
+      console.warn('Printable ticket container element not found, falling back to window.print()');
+      window.print();
       setIsGeneratingPdf(false);
+      return;
+    }
+
+    const opt = {
+      margin: [5, 5, 5, 5],
+      filename: `ETicket_${currentPNR || 'AMADEUS'}_${Date.now()}.pdf`,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true, logging: false },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+    };
+
+    const html2pdfLib = typeof window !== 'undefined' ? (window as any).html2pdf : null;
+
+    if (typeof html2pdfLib === 'function') {
+      try {
+        html2pdfLib()
+          .set(opt)
+          .from(element)
+          .save()
+          .then(() => {
+            setIsGeneratingPdf(false);
+          })
+          .catch((err: any) => {
+            console.error('PDF generation error:', err);
+            window.print();
+            setIsGeneratingPdf(false);
+          });
+      } catch (err) {
+        console.error('PDF generation error:', err);
+        window.print();
+        setIsGeneratingPdf(false);
+      }
+    } else {
+      // Dynamic load fallback if html2pdf isn't immediately attached
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+          script.onload = () => resolve();
+          script.onerror = () => reject(new Error('Failed to load html2pdf.js'));
+          document.head.appendChild(script);
+        });
+
+        const reloadedLib = (window as any).html2pdf;
+        if (typeof reloadedLib === 'function') {
+          reloadedLib()
+            .set(opt)
+            .from(element)
+            .save()
+            .then(() => {
+              setIsGeneratingPdf(false);
+            })
+            .catch((err: any) => {
+              console.error('PDF generation error:', err);
+              window.print();
+              setIsGeneratingPdf(false);
+            });
+        } else {
+          await downloadItrPdfFile(data, element as HTMLElement);
+          setIsGeneratingPdf(false);
+        }
+      } catch (err) {
+        console.error('PDF generation error:', err);
+        window.print();
+        setIsGeneratingPdf(false);
+      }
     }
   };
 
@@ -88,8 +189,16 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-2 sm:p-4 backdrop-blur-xs overflow-y-auto no-print"
       id="itr-receipt-modal"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          handleClose();
+        }
+      }}
     >
-      <div className="bg-[#e2e8f0] rounded-lg shadow-2xl border border-slate-300 w-full max-w-4xl overflow-hidden flex flex-col max-h-[96vh] animate-in fade-in zoom-in-95 duration-200">
+      <div
+        className="bg-[#e2e8f0] rounded-lg shadow-2xl border border-slate-300 w-full max-w-4xl overflow-hidden flex flex-col max-h-[96vh] animate-in fade-in zoom-in-95 duration-200"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Top Control Bar with Quick Action Buttons */}
         <div className="bg-[#0b3b60] text-white px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3 shrink-0 shadow-md">
           <div className="flex items-center gap-3">
@@ -122,7 +231,7 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
               {isGeneratingPdf ? (
                 <>
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>Generating...</span>
+                  <span>Generating PDF...</span>
                 </>
               ) : (
                 <>
@@ -146,9 +255,10 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
             <button
               type="button"
               id="btn-close-itr-modal"
-              onClick={onClose}
-              className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white font-bold text-xs sm:text-sm rounded transition-colors cursor-pointer"
-              title="Close window"
+              onClick={handleClose}
+              className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white font-bold text-xs sm:text-sm rounded transition-colors cursor-pointer flex items-center justify-center"
+              title="Close window (Esc)"
+              aria-label="Close E-Ticket modal"
             >
               <X className="w-4 h-4" />
             </button>
@@ -156,12 +266,21 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
         </div>
 
         {/* Scrollable Document Canvas (Single-Page A4 Printable Ticket Container) */}
-        <div className="flex-1 overflow-y-auto p-3 sm:p-6 bg-[#cbd5e1] text-[#1e293b]">
+        <div
+          className="flex-1 overflow-y-auto p-3 sm:p-6 bg-[#cbd5e1] text-[#1e293b]"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              handleClose();
+            }
+          }}
+        >
           <div
             ref={receiptCardRef}
-            id="itr-printable-receipt"
-            className="max-w-[840px] mx-auto bg-white rounded-md shadow-lg border border-slate-300 p-5 sm:p-8 space-y-4 select-text"
+            id="ticketPrintArea"
+            data-receipt-id="itr-printable-receipt"
+            className="ticket-card-content max-w-[840px] mx-auto bg-white rounded-md shadow-lg border border-slate-300 p-5 sm:p-8 space-y-4 select-text"
             style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif' }}
+            onClick={(e) => e.stopPropagation()}
           >
             {/* 1. HEADER & TOP BANNER (DYNAMIC AIRLINE BRANDING) */}
             <div className="border-b-2 border-[#0b3b60] pb-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -532,6 +651,16 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
             </button>
             <button
               type="button"
+              id="btn-close-itr-modal-bottom"
+              onClick={handleClose}
+              className="px-3.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold text-xs rounded shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>Close</span>
+            </button>
+            <button
+              type="button"
+              id="btn-download-pdf-bottom"
               onClick={handleDirectPdfDownload}
               disabled={isGeneratingPdf}
               className="px-4 py-1.5 bg-[#0b3b60] hover:bg-[#082a45] text-white font-bold text-xs rounded shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-75"

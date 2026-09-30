@@ -1219,11 +1219,15 @@ export const downloadItrPdfFile = async (
   data: ItrReceiptData,
   sourceElement?: HTMLElement | null
 ): Promise<void> => {
-  const pnr = data.pnrLocator || 'TKT';
-  const filename = `E-Ticket_${pnr}_${Date.now()}.pdf`;
+  const pnr = data.pnrLocator || 'AMADEUS';
+  const filename = `ETicket_${pnr}_${Date.now()}.pdf`;
 
   // Target the inner ticket container element (the clean white ticket confirmation card)
-  let elementToCapture = sourceElement || document.getElementById('itr-printable-receipt');
+  let elementToCapture =
+    sourceElement ||
+    document.getElementById('ticketPrintArea') ||
+    document.querySelector('.ticket-card-content') ||
+    document.getElementById('itr-printable-receipt');
   let tempContainer: HTMLElement | null = null;
 
   if (!elementToCapture) {
@@ -1236,12 +1240,16 @@ export const downloadItrPdfFile = async (
     tempContainer.style.zIndex = '-9999';
     tempContainer.innerHTML = generateItrHtmlDocument(data);
     document.body.appendChild(tempContainer);
-    elementToCapture = (tempContainer.querySelector('#itr-printable-receipt') as HTMLElement) || tempContainer;
+    elementToCapture =
+      (tempContainer.querySelector('#ticketPrintArea') as HTMLElement) ||
+      (tempContainer.querySelector('.ticket-card-content') as HTMLElement) ||
+      (tempContainer.querySelector('#itr-printable-receipt') as HTMLElement) ||
+      tempContainer;
   }
 
   // Exact html2pdf options specified by user:
   const opt = {
-    margin: [4, 4, 4, 4],
+    margin: [5, 5, 5, 5],
     filename,
     image: { type: 'jpeg', quality: 0.98 },
     html2canvas: { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' },

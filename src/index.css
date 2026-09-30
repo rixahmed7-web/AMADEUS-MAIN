@@ -16,11 +16,17 @@
     visibility: hidden !important;
   }
 
+  #ticketPrintArea,
+  #ticketPrintArea *,
+  .ticket-card-content,
+  .ticket-card-content *,
   #itr-printable-receipt,
   #itr-printable-receipt * {
     visibility: visible !important;
   }
 
+  #ticketPrintArea,
+  .ticket-card-content,
   #itr-printable-receipt {
     position: absolute !important;
     left: 0 !important;
@@ -35,6 +41,10 @@
     background: #ffffff !important;
   }
 
+  #ticketPrintArea table,
+  #ticketPrintArea .instructions-box,
+  .ticket-card-content table,
+  .ticket-card-content .instructions-box,
   #itr-printable-receipt table,
   #itr-printable-receipt .instructions-box {
     break-inside: avoid;
