@@ -565,7 +565,7 @@ export const getDiverseFlightRoster = (
   }
 
   // 5. ROUTE: Bangladesh to Saudi Arabia (DAC to RUH, JED, MED, DMM)
-  if ((o === 'DAC' && (d === 'RUH' || d === 'JED' || d === 'MED' || d === 'DMM')) || ((o === 'RUH' || o === 'JED' || o === 'MED') && d === 'DAC')) {
+  if (o === 'DAC' && (d === 'RUH' || d === 'JED' || d === 'MED' || d === 'DMM')) {
     return [
       { airline: 'SV', flightNumber: '805', depTime: '0355', arrTime: '0820', equip: '77W', classes1: CLASS_TEMPLATES[0].c1, classes2: CLASS_TEMPLATES[0].c2 }, // Saudia Direct
       { airline: 'BG', flightNumber: '049', depTime: '0830', arrTime: '1215', equip: '77W', classes1: CLASS_TEMPLATES[1].c1, classes2: CLASS_TEMPLATES[1].c2 }, // Biman Direct
@@ -579,6 +579,24 @@ export const getDiverseFlightRoster = (
       { airline: 'XY', flightNumber: '854', depTime: '2130', arrTime: '0145', equip: '321', classes1: CLASS_TEMPLATES[9].c1, classes2: CLASS_TEMPLATES[9].c2 }, // Flynas Direct
       { airline: 'SV', flightNumber: '815', depTime: '2200', arrTime: '0215', equip: '789', classes1: CLASS_TEMPLATES[10].c1, classes2: CLASS_TEMPLATES[10].c2 }, // Saudia Direct
       { airline: 'BG', flightNumber: '041', depTime: '2315', arrTime: '0300', equip: '77W', classes1: CLASS_TEMPLATES[11].c1, classes2: CLASS_TEMPLATES[11].c2 }, // Biman Direct
+    ];
+  }
+
+  // 5b. ROUTE: Saudi Arabia to Bangladesh (JED, RUH, MED, DMM to DAC)
+  if ((o === 'RUH' || o === 'JED' || o === 'MED' || o === 'DMM') && d === 'DAC') {
+    return [
+      { airline: 'SV', flightNumber: '804', depTime: '0415', arrTime: '1245', equip: '77W', classes1: CLASS_TEMPLATES[0].c1, classes2: CLASS_TEMPLATES[0].c2 }, // Saudia Direct
+      { airline: 'BG', flightNumber: '036', depTime: '0730', arrTime: '1600', equip: '77W', classes1: CLASS_TEMPLATES[1].c1, classes2: CLASS_TEMPLATES[1].c2 }, // Biman Direct
+      { airline: 'EK', flightNumber: '2064', depTime: '1030', arrTime: '1315', equip: '77W', transitHub: 'DXB', transitFlightNumber: '582', transitDepTime: '1500', transitArrTime: '2130', transitEquip: '77W', elapsedTime: '08:00', classes1: CLASS_TEMPLATES[2].c1, classes2: CLASS_TEMPLATES[2].c2 },
+      { airline: 'QR', flightNumber: '1165', depTime: '1145', arrTime: '1355', equip: '789', transitHub: 'DOH', transitFlightNumber: '642', transitDepTime: '1530', transitArrTime: '2315', transitEquip: '77W', elapsedTime: '08:30', classes1: CLASS_TEMPLATES[3].c1, classes2: CLASS_TEMPLATES[3].c2 },
+      { airline: 'XY', flightNumber: '851', depTime: '1315', arrTime: '2145', equip: '320', classes1: CLASS_TEMPLATES[4].c1, classes2: CLASS_TEMPLATES[4].c2 }, // Flynas Direct
+      { airline: 'BS', flightNumber: '336', depTime: '1545', arrTime: '0015', equip: '333', classes1: CLASS_TEMPLATES[5].c1, classes2: CLASS_TEMPLATES[5].c2 }, // US-Bangla Direct
+      { airline: 'GF', flightNumber: '168', depTime: '1630', arrTime: '1845', equip: '321', transitHub: 'BAH', transitFlightNumber: '250', transitDepTime: '2015', transitArrTime: '0445', transitEquip: '789', elapsedTime: '09:15', classes1: CLASS_TEMPLATES[6].c1, classes2: CLASS_TEMPLATES[6].c2 },
+      { airline: 'SV', flightNumber: '808', depTime: '1830', arrTime: '0300', equip: '333', classes1: CLASS_TEMPLATES[7].c1, classes2: CLASS_TEMPLATES[7].c2 }, // Saudia Direct
+      { airline: 'BG', flightNumber: '040', depTime: '2045', arrTime: '0515', equip: '788', classes1: CLASS_TEMPLATES[8].c1, classes2: CLASS_TEMPLATES[8].c2 }, // Biman Direct
+      { airline: 'XY', flightNumber: '853', depTime: '2115', arrTime: '0545', equip: '321', classes1: CLASS_TEMPLATES[9].c1, classes2: CLASS_TEMPLATES[9].c2 }, // Flynas Direct
+      { airline: 'SV', flightNumber: '814', depTime: '2315', arrTime: '0745', equip: '789', classes1: CLASS_TEMPLATES[10].c1, classes2: CLASS_TEMPLATES[10].c2 }, // Saudia Direct
+      { airline: 'BG', flightNumber: '042', depTime: '2355', arrTime: '0830', equip: '77W', classes1: CLASS_TEMPLATES[11].c1, classes2: CLASS_TEMPLATES[11].c2 }, // Biman Direct
     ];
   }
 
@@ -682,101 +700,167 @@ export interface ParsedAnParams {
   dest: string;
   date: string;
   airlineFilter?: string;
+  returnLeg?: {
+    orig: string;
+    dest: string;
+    date: string;
+    airlineFilter?: string;
+  };
 }
+
+const parseSingleLeg = (
+  raw: string,
+  defaultOrig = 'DAC',
+  defaultDest = 'DXB'
+): { date: string; orig: string; dest: string } => {
+  let rem = raw.toUpperCase().trim();
+  rem = rem.replace(/(?:\/\/|\/|\s)[0-2]\d[0-5]\d(?:\s|$)/g, ' ');
+  rem = rem.replace(/(?:\/\/|\/)[A-Z]{1,2}(?:\s|$)/g, ' ');
+  const compact = rem.replace(/[\s\/-]+/g, '');
+
+  let date = '30SEP';
+  let orig = defaultOrig;
+  let dest = defaultDest;
+
+  // Pattern 1: Day (1-2 digits) + 3-letter Month + Optional Year + Orig (3 letters) + Dest (3 letters)
+  // e.g. "20OCTDACRUH", "25NOVJEDDAC"
+  const m1 = compact.match(/^(\d{1,2})([A-Z]{3})(?:\d{2}|\d{4})?([A-Z]{3})([A-Z]{3})$/);
+  if (m1 && MONTHS.includes(m1[2])) {
+    date = `${m1[1].padStart(2, '0')}${m1[2]}`;
+    orig = m1[3];
+    dest = m1[4];
+    return { date, orig, dest };
+  }
+
+  // Pattern 2: Day (1-2 digits) + 3-letter Month + 1 City (3 letters)
+  // e.g. "25NOVDAC", "25NOVJED"
+  const m2 = compact.match(/^(\d{1,2})([A-Z]{3})(?:\d{2}|\d{4})?([A-Z]{3})$/);
+  if (m2 && MONTHS.includes(m2[2])) {
+    date = `${m2[1].padStart(2, '0')}${m2[2]}`;
+    const token = m2[3];
+    if (token === defaultDest) {
+      orig = defaultOrig;
+      dest = defaultDest;
+    } else {
+      orig = token;
+      dest = defaultDest;
+    }
+    return { date, orig, dest };
+  }
+
+  // Pattern 3: Day (1-2 digits) + 3-letter Month only
+  // e.g. "25NOV"
+  const m3 = compact.match(/^(\d{1,2})([A-Z]{3})(?:\d{2}|\d{4})?$/);
+  if (m3 && MONTHS.includes(m3[2])) {
+    date = `${m3[1].padStart(2, '0')}${m3[2]}`;
+    orig = defaultOrig;
+    dest = defaultDest;
+    return { date, orig, dest };
+  }
+
+  // Pattern 4: Fallback with token search (handles spaces like "20OCT DAC RUH")
+  const dateToken = rem.match(/(?:^|[\s\/-])(\d{1,2})([A-Z]{3})(?:\d{2}|\d{4})?(?:[\s\/-]|$)/);
+  if (dateToken && MONTHS.includes(dateToken[2])) {
+    date = `${dateToken[1].padStart(2, '0')}${dateToken[2]}`;
+    rem = rem.replace(dateToken[0], ' ').trim();
+  }
+
+  const cleanTokens = rem.replace(/[^A-Z]/g, ' ').split(/\s+/).filter((t) => t.length === 3 && !MONTHS.includes(t));
+  if (cleanTokens.length >= 2) {
+    orig = cleanTokens[0];
+    dest = cleanTokens[1];
+  } else if (cleanTokens.length === 1) {
+    const singleCode = cleanTokens[0];
+    if (singleCode === defaultDest) {
+      orig = defaultOrig;
+      dest = defaultDest;
+    } else {
+      orig = singleCode;
+      dest = defaultDest;
+    }
+  }
+
+  return { date, orig, dest };
+};
 
 export const parseAnInput = (rawCmd: string): ParsedAnParams => {
   const upper = rawCmd.toUpperCase().trim();
   let rem = upper.replace(/^AN\s*/, '').trim();
 
-  // 1. Extract Airline Qualifier (/AQR, //AQR, /ASV, //ASV, /ABG, /ABS, /A SV, etc.)
-  let airlineFilter: string | undefined = undefined;
-  const airMatch = rem.match(/(?:\/\/|\/|\s)A\s*([A-Z0-9]{2})(?:\s|$)/);
-  if (airMatch) {
-    airlineFilter = airMatch[1];
-    rem = rem.replace(airMatch[0], ' ').trim();
-  } else {
-    const trailingSlashAir = rem.match(/(?:\/\/|\/)([A-Z0-9]{2})$/);
-    if (trailingSlashAir) {
-      airlineFilter = trailingSlashAir[1];
-      rem = rem.replace(trailingSlashAir[0], ' ').trim();
-    }
-  }
-
-  // 2. Strip any time qualifiers (e.g. 1800, /1800) or class qualifiers (/CY, etc.)
-  rem = rem.replace(/(?:\/\/|\/|\s)[0-2]\d[0-5]\d(?:\s|$)/g, ' ');
-  rem = rem.replace(/(?:\/\/|\/)[A-Z]{1,2}(?:\s|$)/g, ' ');
-
-  // 3. Compact string for unambiguous pattern matching
-  const compact = rem.replace(/[\s\/-]+/g, '');
-
-  let date = '30SEP';
-  let orig = 'DAC';
-  let dest = 'DXB';
-
-  // Pattern 1: Day (1-2 digits) + 3-letter Month + Optional Year (2 or 4 digits) + Orig (3 letters) + Dest (3 letters)
-  // e.g. "30SEPYYZRUH", "20NOVDACCXE", "30SEPDACDXB", "25OCTDACJED", "30SEP26YYZRUH"
-  const standardMatch = compact.match(/^(\d{1,2})([A-Z]{3})(?:\d{2}|\d{4})?([A-Z]{3})([A-Z]{3})$/);
-  if (standardMatch && MONTHS.includes(standardMatch[2])) {
-    date = `${standardMatch[1].padStart(2, '0')}${standardMatch[2]}`;
-    orig = standardMatch[3];
-    dest = standardMatch[4];
-  } else {
-    // Pattern 2: Day only (1-2 digits) + Orig (3 letters) + Dest (3 letters)
-    // e.g. "15YYZRUH", "30DACDXB"
-    const dayOnlyMatch = compact.match(/^(\d{1,2})([A-Z]{3})([A-Z]{3})$/);
-    if (dayOnlyMatch && !MONTHS.includes(dayOnlyMatch[2])) {
-      date = `${dayOnlyMatch[1].padStart(2, '0')}SEP`;
-      orig = dayOnlyMatch[2];
-      dest = dayOnlyMatch[3];
+  // Helper to extract airline qualifier from segment string
+  const extractAirlineQualifier = (str: string): { cleaned: string; airline?: string } => {
+    let cleaned = str.trim();
+    let airline: string | undefined = undefined;
+    const airMatch = cleaned.match(/(?:\/\/|\/|\s)A\s*([A-Z0-9]{2})(?:\s|$)/);
+    if (airMatch) {
+      airline = airMatch[1];
+      cleaned = cleaned.replace(airMatch[0], ' ').trim();
     } else {
-      // Pattern 3: No date specified, just Orig (3 letters) + Dest (3 letters)
-      // e.g. "YYZRUH", "DACDXB"
-      const citiesOnlyMatch = compact.match(/^([A-Z]{3})([A-Z]{3})$/);
-      if (citiesOnlyMatch && !MONTHS.includes(citiesOnlyMatch[1]) && !MONTHS.includes(citiesOnlyMatch[2])) {
-        orig = citiesOnlyMatch[1];
-        dest = citiesOnlyMatch[2];
-        date = '30SEP';
-      } else {
-        // Pattern 4: Fallback with token search
-        const dateToken = rem.match(/(?:^|[\s\/-])(\d{1,2})([A-Z]{3})(?:\d{2}|\d{4})?(?:[\s\/-]|$)/);
-        if (dateToken && MONTHS.includes(dateToken[2])) {
-          date = `${dateToken[1].padStart(2, '0')}${dateToken[2]}`;
-          rem = rem.replace(dateToken[0], ' ').trim();
-        }
-
-        const cleanTokens = rem.replace(/[^A-Z]/g, ' ').split(/\s+/).filter((t) => t.length === 3 && !MONTHS.includes(t));
-        if (cleanTokens.length >= 2) {
-          orig = cleanTokens[0];
-          dest = cleanTokens[1];
-        } else if (cleanTokens.length === 1) {
-          if (cleanTokens[0] === 'DAC') {
-            orig = 'DAC';
-            dest = 'DXB';
-          } else {
-            orig = 'DAC';
-            dest = cleanTokens[0];
-          }
-        }
+      const trailingSlashAir = cleaned.match(/(?:\/\/|\/)([A-Z0-9]{2})$/);
+      if (trailingSlashAir) {
+        airline = trailingSlashAir[1];
+        cleaned = cleaned.replace(trailingSlashAir[0], ' ').trim();
       }
     }
+    return { cleaned, airline };
+  };
+
+  // Check for multi-city / return leg syntax using asterisk '*'
+  // e.g. "AN20OCTDACRUH*25NOVJEDDAC" or "AN20OCTDACRUH*25NOV" or "AN20OCTDACRUH*25NOVJED"
+  if (rem.includes('*')) {
+    const [part1, ...restParts] = rem.split('*');
+    const part2 = restParts.join('*').trim();
+
+    const ext1 = extractAirlineQualifier(part1);
+    const ext2 = extractAirlineQualifier(part2);
+    const air1 = ext1.airline || ext2.airline;
+    const air2 = ext2.airline || ext1.airline;
+
+    const outbound = parseSingleLeg(ext1.cleaned, 'DAC', 'RUH');
+    // For return leg: default origin is outbound destination, default destination is outbound origin
+    const inbound = parseSingleLeg(ext2.cleaned, outbound.dest, outbound.orig);
+
+    let o1 = outbound.orig;
+    let d1 = outbound.dest;
+    if (o1 === 'SEP' || MONTHS.includes(o1)) o1 = 'DAC';
+    if (d1 === 'SEP' || MONTHS.includes(d1)) d1 = o1 === 'DAC' ? 'RUH' : 'DAC';
+    if (o1 === d1) d1 = o1 === 'DAC' ? 'RUH' : 'DAC';
+
+    let o2 = inbound.orig;
+    let d2 = inbound.dest;
+    if (o2 === 'SEP' || MONTHS.includes(o2)) o2 = d1;
+    if (d2 === 'SEP' || MONTHS.includes(d2)) d2 = o1;
+    if (o2 === d2) d2 = o1;
+
+    return {
+      orig: o1,
+      dest: d1,
+      date: cleanGdsDate(outbound.date),
+      airlineFilter: air1,
+      returnLeg: {
+        orig: o2,
+        dest: d2,
+        date: cleanGdsDate(inbound.date),
+        airlineFilter: air2,
+      },
+    };
   }
 
-  // Safety sanitization: NEVER allow 'SEP' or any month string to be an origin or destination!
-  if (orig === 'SEP' || MONTHS.includes(orig)) {
-    orig = 'DAC';
-  }
-  if (dest === 'SEP' || MONTHS.includes(dest)) {
-    dest = orig === 'DAC' ? 'DXB' : 'DAC';
-  }
-  if (orig === dest) {
-    dest = orig === 'DAC' ? 'DXB' : 'DAC';
-  }
+  // Standard one-way search
+  const ext = extractAirlineQualifier(rem);
+  const single = parseSingleLeg(ext.cleaned, 'DAC', 'DXB');
+  let orig = single.orig;
+  let dest = single.dest;
+
+  if (orig === 'SEP' || MONTHS.includes(orig)) orig = 'DAC';
+  if (dest === 'SEP' || MONTHS.includes(dest)) dest = orig === 'DAC' ? 'DXB' : 'DAC';
+  if (orig === dest) dest = orig === 'DAC' ? 'DXB' : 'DAC';
 
   return {
     orig,
     dest,
-    date: cleanGdsDate(date),
-    airlineFilter,
+    date: cleanGdsDate(single.date),
+    airlineFilter: ext.airline,
   };
 };
 
@@ -909,41 +993,40 @@ export const parseFxdInput = (rawCmd: string): ParsedFxdParams => {
 // 5. GENERATE FLIGHT AVAILABILITY (AN) - DIVERSE MULTI-AIRLINE MIX
 // ======================================================================
 
-export const generateAvailability = (
+const buildSectorAvailability = (
   date: string,
-  origin: string,
-  destination: string,
-  airlineFilter?: string
-): { options: AvailabilityOption[]; displayText: string } => {
-  const orig = origin.toUpperCase().substring(0, 3);
-  const dest = destination.toUpperCase().substring(0, 3);
+  orig: string,
+  dest: string,
+  airlineFilter?: string,
+  startLineNum: number = 1,
+  maxOptions: number = 12
+): { options: AvailabilityOption[]; lines: string[] } => {
   const dte = cleanGdsDate(date);
   const air = airlineFilter ? airlineFilter.toUpperCase().substring(0, 2) : undefined;
-
   const oCountry = getAirportCountry(orig);
   const dCountry = getAirportCountry(dest);
 
-  // STRICT BANGLADESH RESTRICTION FOR BG/BS/VQ/2A
   if (air && ['BG', 'BS', 'VQ', '2A'].includes(air) && oCountry !== 'BD' && dCountry !== 'BD') {
     const lines = [
       `AN${dte}${orig}${dest}/A${air}`,
       `NO SCHEDULED FLIGHTS FOR CARRIER ${air} ON SECTOR ${orig}-${dest}`,
       `NOTE: ${air} ONLY OPERATES ROUTES TO/FROM BANGLADESH (FREEDOMS OF THE AIR RESTRICTION)`,
     ];
-    return { options: [], displayText: lines.join('\n') };
+    return { options: [], lines };
   }
 
-  // Get diverse flight roster (5 to 8 airlines when no filter; single airline when filter is set)
-  const roster = getDiverseFlightRoster(orig, dest, air);
+  const rawRoster = getDiverseFlightRoster(orig, dest, air);
+  // Prioritize direct non-stop flights over connecting flights
+  const directFlights = rawRoster.filter((p) => !p.transitHub);
+  const transitFlights = rawRoster.filter((p) => !!p.transitHub);
+  const roster = [...directFlights, ...transitFlights].slice(0, maxOptions);
 
   const options: AvailabilityOption[] = [];
 
   roster.forEach((plan, index) => {
-    const lineNum = index + 1;
+    const lineNum = startLineNum + index;
 
     if (plan.transitHub && plan.transitFlightNumber) {
-      // Connecting flight (Leg 1: Orig -> Hub, Leg 2: Hub -> Dest)
-      // Guaranteed: Leg 2 destination is strictly 'dest', NEVER 'orig'!
       options.push({
         lineNum,
         date: dte,
@@ -966,7 +1049,7 @@ export const generateAvailability = (
           classes1: plan.transitClasses1 || plan.classes1,
           classes2: plan.transitClasses2 || plan.classes2,
           origin: plan.transitHub,
-          destination: dest, // Strictly the final destination!
+          destination: dest,
           destTerm: '2',
           depTime: plan.transitDepTime || '0900',
           arrTime: plan.transitArrTime || '1415',
@@ -975,7 +1058,6 @@ export const generateAvailability = (
         },
       });
     } else {
-      // Direct flight (Non-stop: Orig -> Dest)
       options.push({
         lineNum,
         date: dte,
@@ -996,9 +1078,7 @@ export const generateAvailability = (
     }
   });
 
-  // Build authentic Amadeus AN GDS display
   const lines: string[] = [];
-  // Echo line strictly echos requested date, origin, and destination!
   lines.push(`AN${dte}${orig}${dest}${air ? '/A' + air : ''}`);
 
   const destAirport = AIRPORTS.find((a) => a.code === dest);
@@ -1035,10 +1115,44 @@ export const generateAvailability = (
     }
   });
 
-  return {
-    options,
-    displayText: lines.join('\n'),
-  };
+  return { options, lines };
+};
+
+export const generateAvailability = (
+  date: string,
+  origin: string,
+  destination: string,
+  airlineFilter?: string,
+  returnLeg?: {
+    orig: string;
+    dest: string;
+    date: string;
+    airlineFilter?: string;
+  }
+): { options: AvailabilityOption[]; displayText: string } => {
+  const orig = origin.toUpperCase().substring(0, 3);
+  const dest = destination.toUpperCase().substring(0, 3);
+
+  if (returnLeg) {
+    const orig2 = returnLeg.orig.toUpperCase().substring(0, 3);
+    const dest2 = returnLeg.dest.toUpperCase().substring(0, 3);
+    const date2 = returnLeg.date;
+    const air2 = returnLeg.airlineFilter || airlineFilter;
+
+    // Outbound leg: lines 1 to 6
+    const sec1 = buildSectorAvailability(date, orig, dest, airlineFilter, 1, 6);
+    // Inbound/Return leg: lines 11 to 16
+    const sec2 = buildSectorAvailability(date2, orig2, dest2, air2, 11, 6);
+
+    const options = [...sec1.options, ...sec2.options];
+    const displayText = [...sec1.lines, '', ...sec2.lines].join('\n');
+
+    return { options, displayText };
+  }
+
+  // Single leg: lines 1 to 12
+  const sec = buildSectorAvailability(date, orig, dest, airlineFilter, 1, 12);
+  return { options: sec.options, displayText: sec.lines.join('\n') };
 };
 
 // ======================================================================

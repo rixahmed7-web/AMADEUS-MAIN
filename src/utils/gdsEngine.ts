@@ -370,14 +370,15 @@ const executeSingleGdsCommand = (
     }
   }
 
-  // 1. Availability: AN (e.g. AN30SEPDACLHR/AQR, AN15OCTDACDXB, AN25DECDACJFK/AEK, AN25OCTDACJED/ASV)
+  // 1. Availability: AN (e.g. AN30SEPDACLHR/AQR, AN15OCTDACDXB, AN25DECDACJFK/AEK, AN25OCTDACJED/ASV, AN20OCTDACRUH*25NOVJEDDAC)
   if (upper.startsWith('AN')) {
-    const { orig, dest, date, airlineFilter } = parseAnInput(input);
-    const { options, displayText } = generateAvailability(date, orig, dest, airlineFilter);
+    const { orig, dest, date, airlineFilter, returnLeg } = parseAnInput(input);
+    const { options, displayText } = generateAvailability(date, orig, dest, airlineFilter, returnLeg);
 
     const updated = {
       ...currentSession,
       lastAvailability: options,
+      lastAvailabilityDate: date,
     };
 
     return {
@@ -687,7 +688,76 @@ const executeSingleGdsCommand = (
       };
     }
 
-    // Format A: SS<SEATS><CLASS><LINE> (e.g. SS1Y1, SS 1 Y 1, SS2J1)
+    // Check for compound sell across dual/multi availability: e.g. SS1Y1*11, SS1Y1*SS1Y11, SS1Y1/11, SS1Y1/SS1Y11
+    const compoundMatch = upper.match(/^SS\s*(\d+)\s*([A-Z])\s*(\d+)\s*[*\/]\s*(?:SS\s*(\d+)?\s*([A-Z])?\s*)?(\d+)$/);
+    if (compoundMatch) {
+      const seats = parseInt(compoundMatch[1], 10);
+      const class1 = compoundMatch[2];
+      const line1 = parseInt(compoundMatch[3], 10);
+      const class2 = compoundMatch[5] || class1;
+      const line2 = parseInt(compoundMatch[6], 10);
+
+      const bookOption = (lineNum: number, cls: string, startSegNum: number): { segs: BookedSegment[]; text: string } => {
+        let flightOpt = currentSession.lastAvailability?.find((f) => f.lineNum === lineNum);
+        if (!flightOpt) {
+          const today = getTodayGdsDate();
+          const fallback = generateAvailability(today.dateToken, 'DAC', 'RUH');
+          flightOpt = fallback.options.find((f) => f.lineNum === lineNum) || fallback.options[0];
+        }
+
+        const seg1: BookedSegment = {
+          segmentNumber: startSegNum,
+          airline: flightOpt.flight1.airline,
+          flightNumber: flightOpt.flight1.flightNumber,
+          bookingClass: cls,
+          date: flightOpt.date,
+          origin: flightOpt.flight1.origin,
+          destination: flightOpt.flight1.destination,
+          status: `HK${seats}`,
+          depTime: flightOpt.flight1.depTime,
+          arrTime: flightOpt.flight1.arrTime,
+          equip: flightOpt.flight1.equip,
+        };
+
+        const segs: BookedSegment[] = [seg1];
+        let confirmation = ` ${seg1.segmentNumber}  ${seg1.airline} ${seg1.flightNumber.padEnd(4, ' ')} ${seg1.bookingClass} ${seg1.date} ${seg1.origin}${seg1.destination} ${seg1.status} ${seg1.depTime} ${seg1.arrTime}  *1A/E*`;
+
+        if (flightOpt.flight2) {
+          const seg2: BookedSegment = {
+            segmentNumber: startSegNum + 1,
+            airline: flightOpt.flight2.airline,
+            flightNumber: flightOpt.flight2.flightNumber,
+            bookingClass: cls,
+            date: flightOpt.date,
+            origin: flightOpt.flight2.origin,
+            destination: flightOpt.flight2.destination,
+            status: `HK${seats}`,
+            depTime: flightOpt.flight2.depTime,
+            arrTime: flightOpt.flight2.arrTime,
+            equip: flightOpt.flight2.equip,
+          };
+          segs.push(seg2);
+          const fCode = flightOpt.flight2.codeshare || `${seg2.airline} ${seg2.flightNumber}`;
+          confirmation += `\n ${seg2.segmentNumber}  ${fCode.padEnd(8, ' ')} ${seg2.bookingClass} ${seg2.date} ${seg2.origin}${seg2.destination} ${seg2.status} ${seg2.depTime} ${seg2.arrTime}  *1A/E*`;
+        }
+
+        return { segs, text: confirmation };
+      };
+
+      const res1 = bookOption(line1, class1, currentSession.segments.length + 1);
+      const res2 = bookOption(line2, class2, currentSession.segments.length + res1.segs.length + 1);
+
+      const newSegments = [...currentSession.segments, ...res1.segs, ...res2.segs];
+      return {
+        output: `${res1.text}\n${res2.text}`,
+        updatedSession: {
+          ...currentSession,
+          segments: newSegments,
+        },
+      };
+    }
+
+    // Format A: SS<SEATS><CLASS><LINE> (e.g. SS1Y1, SS 1 Y 1, SS2J1, SS1Y11)
     const match = upper.match(/^SS\s*(\d+)\s*([A-Z])\s*(\d+)$/);
     if (!match) {
       return {
@@ -1249,7 +1319,11 @@ const executeSingleGdsCommand = (
     const segLines: string[] = [];
     if (firstSeg) {
       segLines.push(firstSeg.origin);
-      currentSession.segments.forEach((seg) => {
+      currentSession.segments.forEach((seg, idx) => {
+        if (idx > 0 && currentSession.segments[idx - 1].destination !== seg.origin) {
+          // Open-jaw surface segment (ARNK)
+          segLines.push(`// ${seg.origin}`);
+        }
         segLines.push(
           `${seg.destination} ${seg.airline}  ${seg.flightNumber.padEnd(4, ' ')} ${seg.bookingClass} Y ${seg.date} ${seg.depTime} ${pricing.fareBasis}                  2PC`
         );
@@ -1257,9 +1331,19 @@ const executeSingleGdsCommand = (
     }
 
     const isStored = upper.startsWith('FXP');
-    const fareCalcRoute = currentSession.segments.length > 0
-      ? currentSession.segments.map((s) => `${s.origin} ${s.airline}`).join(' ') + ` ${lastSeg?.destination || ''}`
-      : 'DAC SV JED';
+    const fareCalcParts: string[] = [];
+    currentSession.segments.forEach((s, idx) => {
+      if (idx === 0) {
+        fareCalcParts.push(s.origin, s.airline, s.destination);
+      } else {
+        if (currentSession.segments[idx - 1].destination !== s.origin) {
+          fareCalcParts.push(`/-${s.origin}`, s.airline, s.destination);
+        } else {
+          fareCalcParts.push(s.airline, s.destination);
+        }
+      }
+    });
+    const fareCalcRoute = fareCalcParts.length > 0 ? fareCalcParts.join(' ') : 'DAC SV JED';
 
     const output = [
       `01 ${firstPax}`,
