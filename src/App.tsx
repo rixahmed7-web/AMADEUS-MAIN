@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { PnrSession, TerminalOutputItem, CommandPageTab, ItrReceiptData } from './types';
-import { createInitialSession, executeGdsCommand } from './utils/gdsEngine';
-import { printItrDocument } from './utils/itrReceipt';
+import { createInitialSession, executeGdsCommand, ticketSalesDatabase } from './utils/gdsEngine';
+import { printItrDocument, buildItrReceiptData } from './utils/itrReceipt';
 import { LoginScreen } from './components/LoginScreen';
 import { AmadeusHeader } from './components/AmadeusHeader';
 import { ActionBar } from './components/ActionBar';
@@ -221,8 +221,13 @@ export default function App() {
 
     // If user typed ITR command, directly open the full-screen modal
     if (result.isItr || /^ITR(?:\s*|\/.*|-L\d+)?$/i.test(cmd.trim())) {
-      if (result.itrData) {
-        setActiveItrData(result.itrData);
+      const receiptToShow =
+        result.itrData ||
+        activeItrData ||
+        buildItrReceiptData(result.updatedSession, ticketSalesDatabase) ||
+        buildItrReceiptData(session, ticketSalesDatabase);
+      if (receiptToShow) {
+        setActiveItrData(receiptToShow);
         setIsItrModalOpen(true);
       }
     }
@@ -318,11 +323,20 @@ export default function App() {
           onSelectFlightLine={handleSelectFlightLine}
           onSelectFlightDo={handleSelectFlightDo}
           onOpenItrModal={(data) => {
-            setActiveItrData(data);
+            const receipt =
+              data ||
+              activeItrData ||
+              buildItrReceiptData(session, ticketSalesDatabase);
+            if (receipt) {
+              setActiveItrData(receipt);
+            }
             setIsItrModalOpen(true);
           }}
           onPrintItr={(data) => {
-            const target = data || activeItrData;
+            const target =
+              data ||
+              activeItrData ||
+              buildItrReceiptData(session, ticketSalesDatabase);
             if (target) {
               printItrDocument(target);
             } else {

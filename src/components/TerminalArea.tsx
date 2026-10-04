@@ -10,7 +10,7 @@ interface TerminalAreaProps {
   isSplitView: boolean;
   onSelectFlightLine?: (lineNum: number) => void;
   onSelectFlightDo?: (lineNum: number) => void;
-  onOpenItrModal?: (data: ItrReceiptData) => void;
+  onOpenItrModal?: (data?: ItrReceiptData) => void;
   onPrintItr?: (data?: ItrReceiptData) => void;
 }
 
@@ -422,7 +422,7 @@ export const TerminalArea: React.FC<TerminalAreaProps> = ({
               <div className="pl-0">
                 {renderFormattedOutput(item.content)}
 
-                {(item.isTtp || item.isItr || item.content.includes('OK ETICKET ISSUED') || item.content.includes('FA PAX') || item.content.includes('AMADEUS PASSENGER ITINERARY / RECEIPT')) && (
+                {(item.isTtp || item.isItr || Boolean(item.itrData) || item.content.includes('OK ETICKET ISSUED') || item.content.includes('FA PAX') || item.content.includes('AMADEUS PASSENGER ITINERARY') || item.content.includes('E-TICKET') || item.content.includes('BOOKING CONFIRMATION') || item.content.includes('PASSENGER ITINERARY')) && (
                   <div
                     id={`itr-receipt-action-bar-${item.id}`}
                     className="bg-blue-50/90 border-2 border-[#005eb8]/40 rounded-md px-4 py-3 my-3 flex flex-wrap items-center justify-between gap-3 shadow-sm font-sans animate-in fade-in duration-200"
@@ -432,7 +432,7 @@ export const TerminalArea: React.FC<TerminalAreaProps> = ({
                         type="button"
                         id={`btn-view-download-eticket-${item.id}`}
                         onClick={() => {
-                          if (onOpenItrModal && item.itrData) {
+                          if (onOpenItrModal) {
                             onOpenItrModal(item.itrData);
                           }
                         }}
@@ -454,18 +454,22 @@ export const TerminalArea: React.FC<TerminalAreaProps> = ({
                           TKT: {item.itrData.ticketNumber}
                         </span>
                       )}
-                      {item.itrData && (
-                        <button
-                          type="button"
-                          id={`btn-quick-print-${item.id}`}
-                          onClick={() => printItrDocument(item.itrData!)}
-                          className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 text-xs font-semibold rounded shadow-2xs flex items-center gap-1.5 transition-colors cursor-pointer"
-                          title="Direct Print or Save as PDF"
-                        >
-                          <Printer className="w-3.5 h-3.5 text-[#005eb8]" />
-                          <span>Print</span>
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        id={`btn-quick-print-${item.id}`}
+                        onClick={() => {
+                          if (onPrintItr) {
+                            onPrintItr(item.itrData);
+                          } else if (item.itrData) {
+                            printItrDocument(item.itrData);
+                          }
+                        }}
+                        className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 text-xs font-semibold rounded shadow-2xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                        title="Direct Print or Save as PDF"
+                      >
+                        <Printer className="w-3.5 h-3.5 text-[#005eb8]" />
+                        <span>Print</span>
+                      </button>
                     </div>
                   </div>
                 )}

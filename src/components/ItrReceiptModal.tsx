@@ -43,10 +43,6 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
   const handleClose = () => {
     if (typeof document !== 'undefined') {
       document.body.style.overflow = '';
-      const modalEl = document.getElementById('itr-receipt-modal');
-      if (modalEl) {
-        modalEl.style.display = 'none';
-      }
     }
     onClose();
     setTimeout(() => {
@@ -63,6 +59,10 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
 
     if (typeof document !== 'undefined') {
       document.body.style.overflow = 'hidden';
+      const modalEl = document.getElementById('itr-receipt-modal');
+      if (modalEl) {
+        modalEl.style.display = 'flex';
+      }
     }
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -119,65 +119,36 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
       margin: [5, 5, 5, 5],
       filename: `ETicket_${currentPNR || 'AMADEUS'}_${Date.now()}.pdf`,
       image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true, logging: false },
+      html2canvas: {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+      },
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
     };
 
-    const html2pdfLib = typeof window !== 'undefined' ? (window as any).html2pdf : null;
+    try {
+      const html2pdfLib = typeof window !== 'undefined' ? (window as any).html2pdf : null;
 
-    if (typeof html2pdfLib === 'function') {
-      try {
-        html2pdfLib()
-          .set(opt)
-          .from(element)
-          .save()
-          .then(() => {
-            setIsGeneratingPdf(false);
-          })
-          .catch((err: any) => {
-            console.error('PDF generation error:', err);
-            window.print();
-            setIsGeneratingPdf(false);
-          });
-      } catch (err) {
-        console.error('PDF generation error:', err);
-        window.print();
-        setIsGeneratingPdf(false);
-      }
-    } else {
-      // Dynamic load fallback if html2pdf isn't immediately attached
-      try {
-        await new Promise<void>((resolve, reject) => {
-          const script = document.createElement('script');
-          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
-          script.onload = () => resolve();
-          script.onerror = () => reject(new Error('Failed to load html2pdf.js'));
-          document.head.appendChild(script);
-        });
-
-        const reloadedLib = (window as any).html2pdf;
-        if (typeof reloadedLib === 'function') {
-          reloadedLib()
-            .set(opt)
-            .from(element)
-            .save()
-            .then(() => {
-              setIsGeneratingPdf(false);
-            })
-            .catch((err: any) => {
-              console.error('PDF generation error:', err);
-              window.print();
-              setIsGeneratingPdf(false);
-            });
-        } else {
-          await downloadItrPdfFile(data, element as HTMLElement);
+      if (typeof html2pdfLib === 'function') {
+        try {
+          await html2pdfLib().set(opt).from(element).save();
           setIsGeneratingPdf(false);
+          return;
+        } catch (canvasErr) {
+          console.warn('html2pdf direct failed, trying fallback:', canvasErr);
         }
-      } catch (err) {
-        console.error('PDF generation error:', err);
-        window.print();
-        setIsGeneratingPdf(false);
       }
+
+      // Dynamic script loading or secondary fallback
+      await downloadItrPdfFile(data, element as HTMLElement);
+    } catch (err) {
+      console.error('PDF generation error, falling back to print:', err);
+      window.print();
+    } finally {
+      setIsGeneratingPdf(false);
     }
   };
 
@@ -189,6 +160,7 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-2 sm:p-4 backdrop-blur-xs overflow-y-auto no-print"
       id="itr-receipt-modal"
+      style={{ display: 'flex' }}
       onClick={(e) => {
         if (e.target === e.currentTarget) {
           handleClose();

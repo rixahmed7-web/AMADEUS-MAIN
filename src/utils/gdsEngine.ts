@@ -284,6 +284,9 @@ export const executeGdsCommand = (
     let emailSent: CommandResult['emailSent'] = undefined;
     let itrData: CommandResult['itrData'] = undefined;
 
+    let isTtp = false;
+    let isItr = false;
+
     for (const part of parts) {
       const res = executeSingleGdsCommand(part, activeSession, savedPnrs);
       activeSession = res.updatedSession;
@@ -291,6 +294,8 @@ export const executeGdsCommand = (
       if (res.triggerPrint) triggerPrint = true;
       if (res.emailSent) emailSent = res.emailSent;
       if (res.itrData) itrData = res.itrData;
+      if (res.isTtp) isTtp = true;
+      if (res.isItr) isItr = true;
     }
 
     return {
@@ -299,6 +304,8 @@ export const executeGdsCommand = (
       triggerPrint,
       emailSent,
       itrData,
+      isTtp: isTtp || undefined,
+      isItr: isItr || undefined,
     };
   }
 
