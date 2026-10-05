@@ -11,9 +11,18 @@ import { StudentGuideModal } from './components/StudentGuideModal';
 import { PnrOverviewPanel } from './components/PnrOverviewPanel';
 import { PartnerBadges } from './components/PartnerBadges';
 import { ItrReceiptModal } from './components/ItrReceiptModal';
+import { StandaloneTicketView } from './components/StandaloneTicketView';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { Check, X } from 'lucide-react';
 
 export default function App() {
+  // Routing state for standalone ticket view (e.g. ?view=ticket)
+  const [isStandaloneView, setIsStandaloneView] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    const params = new URLSearchParams(window.location.search);
+    return params.get('view') === 'ticket' || params.get('view') === 'itr' || params.get('ticket') === 'true';
+  });
+
   // Authentication state
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [currentUser, setCurrentUser] = useState<{
@@ -217,6 +226,9 @@ export default function App() {
     // If ITR or TTP produced e-ticket data, update active receipt
     if (result.itrData) {
       setActiveItrData(result.itrData);
+      try {
+        localStorage.setItem('amadeus_active_ticket', JSON.stringify(result.itrData));
+      } catch {}
     }
 
     // If user typed ITR command, directly open the full-screen modal
@@ -225,9 +237,13 @@ export default function App() {
         result.itrData ||
         activeItrData ||
         buildItrReceiptData(result.updatedSession, ticketSalesDatabase) ||
-        buildItrReceiptData(session, ticketSalesDatabase);
+        buildItrReceiptData(session, ticketSalesDatabase) ||
+        buildItrReceiptData(createInitialSession(), ticketSalesDatabase);
       if (receiptToShow) {
         setActiveItrData(receiptToShow);
+        try {
+          localStorage.setItem('amadeus_active_ticket', JSON.stringify(receiptToShow));
+        } catch {}
         setIsItrModalOpen(true);
       }
     }
@@ -272,6 +288,29 @@ export default function App() {
   const handleSelectFlightDo = (lineNum: number) => {
     handleExecuteCommand(`DO${lineNum}`);
   };
+
+  if (isStandaloneView) {
+    return (
+      <ErrorBoundary
+        fallbackTitle="টিকিট প্রদর্শনে ত্রুটি (Standalone Ticket Error)"
+        onReset={() => setIsStandaloneView(false)}
+      >
+        <StandaloneTicketView
+          initialData={activeItrData}
+          onBack={() => {
+            setIsStandaloneView(false);
+            if (typeof window !== 'undefined') {
+              const url = new URL(window.location.href);
+              url.searchParams.delete('view');
+              url.searchParams.delete('ticket');
+              url.searchParams.delete('pnr');
+              window.history.replaceState({}, '', url.pathname || '/');
+            }
+          }}
+        />
+      </ErrorBoundary>
+    );
+  }
 
   if (!isAuthenticated) {
     return (
@@ -326,9 +365,13 @@ export default function App() {
             const receipt =
               data ||
               activeItrData ||
-              buildItrReceiptData(session, ticketSalesDatabase);
+              buildItrReceiptData(session, ticketSalesDatabase) ||
+              buildItrReceiptData(createInitialSession(), ticketSalesDatabase);
             if (receipt) {
               setActiveItrData(receipt);
+              try {
+                localStorage.setItem('amadeus_active_ticket', JSON.stringify(receipt));
+              } catch {}
             }
             setIsItrModalOpen(true);
           }}
@@ -336,7 +379,8 @@ export default function App() {
             const target =
               data ||
               activeItrData ||
-              buildItrReceiptData(session, ticketSalesDatabase);
+              buildItrReceiptData(session, ticketSalesDatabase) ||
+              buildItrReceiptData(createInitialSession(), ticketSalesDatabase);
             if (target) {
               printItrDocument(target);
             } else {
@@ -398,20 +442,26 @@ export default function App() {
       )}
 
       {/* 8. Amadeus Passenger Itinerary & Receipt Modal (View / Print / Email) */}
-      <ItrReceiptModal
-        isOpen={isItrModalOpen}
-        data={activeItrData}
-        onClose={() => {
-          setIsItrModalOpen(false);
-          setTimeout(() => {
-            const cliInput = document.getElementById('gds-cli-input') as HTMLInputElement | null;
-            if (cliInput) {
-              cliInput.focus();
-            }
-          }, 50);
-        }}
-        onSendEmail={(email) => handleExecuteCommand(`ITR-EML-${email}`)}
-      />
+      <ErrorBoundary
+        fallbackTitle="টিকিট রেন্ডারিং সমস্যা (Ticket Display Caught by ErrorBoundary)"
+        isModal={true}
+        onReset={() => setIsItrModalOpen(false)}
+      >
+        <ItrReceiptModal
+          isOpen={isItrModalOpen}
+          data={activeItrData}
+          onClose={() => {
+            setIsItrModalOpen(false);
+            setTimeout(() => {
+              const cliInput = document.getElementById('gds-cli-input') as HTMLInputElement | null;
+              if (cliInput) {
+                cliInput.focus();
+              }
+            }, 50);
+          }}
+          onSendEmail={(email) => handleExecuteCommand(`ITR-EML-${email}`)}
+        />
+      </ErrorBoundary>
     </div>
   );
 }

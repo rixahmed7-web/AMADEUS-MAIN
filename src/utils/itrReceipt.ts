@@ -321,15 +321,11 @@ export const buildItrReceiptData = (
   const resolvedSale = saleMatch || fallbackSale;
 
   const hasTicket =
-    session.isTicketed ||
-    (session.ticketNumbers && session.ticketNumbers.length > 0) ||
-    Boolean(session.pnrLocator && saleMatch) ||
+    Boolean(session?.isTicketed) ||
+    Boolean(session?.ticketNumbers && session.ticketNumbers.length > 0) ||
+    Boolean(session?.pnrLocator && saleMatch) ||
     Boolean(fallbackSale) ||
-    (session.segments && session.segments.length > 0);
-
-  if (!hasTicket && !fallbackSale) {
-    return null;
-  }
+    Boolean(session?.segments && session.segments.length > 0);
 
   // 2. Resolve operating carrier & numeric code
   const primaryCarrierCode = session.segments[0]?.airline || resolvedSale?.airline || 'QR';
@@ -1197,65 +1193,68 @@ export const downloadItrTextFile = (data: ItrReceiptData): void => {
   URL.revokeObjectURL(url);
 };
 
-export const printItrDocument = (data: ItrReceiptData): void => {
-  const html = generateItrHtmlDocument(data);
-
-  const iframe = document.createElement('iframe');
-  iframe.style.position = 'fixed';
-  iframe.style.right = '0';
-  iframe.style.bottom = '0';
-  iframe.style.width = '0';
-  iframe.style.height = '0';
-  iframe.style.border = '0';
-  document.body.appendChild(iframe);
-
-  const doc = iframe.contentWindow?.document;
-  if (doc) {
-    doc.open();
-    doc.write(html);
-    doc.close();
-
-    setTimeout(() => {
-      try {
-        iframe.contentWindow?.focus();
-        iframe.contentWindow?.print();
-      } catch {
-        const win = window.open('', '_blank');
-        if (win) {
-          win.document.write(html);
-          win.document.close();
-          win.focus();
-          win.print();
-        }
-      } finally {
-        setTimeout(() => {
-          if (document.body.contains(iframe)) {
-            document.body.removeChild(iframe);
-          }
-        }, 1200);
-      }
-    }, 400);
-  }
+export const downloadItrHtmlFile = (data: ItrReceiptData): void => {
+  const content = generateItrHtmlDocument(data);
+  const blob = new Blob([content], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `ETicket_${data.pnrLocator || 'AMADEUS'}_${data.ticketNumber || 'TKT'}.html`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 };
 
-declare global {
-  interface Window {
-    html2pdf?: any;
+export const printItrDocument = (data: ItrReceiptData): void => {
+  try {
+    const html = generateItrHtmlDocument(data);
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    iframe.style.opacity = '0';
+    iframe.style.pointerEvents = 'none';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow?.document;
+    if (doc) {
+      doc.open();
+      doc.write(html);
+      doc.close();
+
+      setTimeout(() => {
+        try {
+          iframe.contentWindow?.focus();
+          iframe.contentWindow?.print();
+        } catch (printErr) {
+          console.warn('Iframe print failed, falling back to window.print():', printErr);
+          window.print();
+        }
+      }, 500);
+    }
+  } catch (err) {
+    console.error('printItrDocument error:', err);
+    window.print();
   }
-}
+};
 
 export const downloadItrPdfFile = async (
   data: ItrReceiptData,
   sourceElement?: HTMLElement | null
-): Promise<void> => {
+): Promise<{ success: boolean; error?: string }> => {
   const pnr = data.pnrLocator || 'AMADEUS';
-  const filename = `ETicket_${pnr}_${Date.now()}.pdf`;
+  const tkt = data.ticketNumber || 'TKT';
+  const filename = `ETicket_${pnr}_${tkt}.pdf`;
 
   // Target the inner ticket container element (the clean white ticket confirmation card)
   let elementToCapture =
     sourceElement ||
     document.getElementById('ticketPrintArea') ||
-    document.querySelector('.ticket-card-content') ||
+    document.querySelector('.ticket-card-content') as HTMLElement ||
     document.getElementById('itr-printable-receipt');
   let tempContainer: HTMLElement | null = null;
 
@@ -1272,73 +1271,113 @@ export const downloadItrPdfFile = async (
     elementToCapture =
       (tempContainer.querySelector('#ticketPrintArea') as HTMLElement) ||
       (tempContainer.querySelector('.ticket-card-content') as HTMLElement) ||
-      (tempContainer.querySelector('#itr-printable-receipt') as HTMLElement) ||
+      (tempContainer.querySelector('.ticket-container') as HTMLElement) ||
       tempContainer;
   }
 
-  // Exact html2pdf options specified by user:
-  const opt = {
-    margin: [5, 5, 5, 5],
-    filename,
-    image: { type: 'jpeg', quality: 0.98 },
-    html2canvas: { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' },
-    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-  };
-
   try {
-    // If html2pdf is available globally on window, use it
-    if (typeof window !== 'undefined' && !window.html2pdf) {
-      // Load CDN dynamically if not yet attached
-      await new Promise<void>((resolve, reject) => {
-        const script = document.createElement('script');
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
-        script.onload = () => resolve();
-        script.onerror = () => reject(new Error('Failed to load html2pdf.js bundle'));
-        document.head.appendChild(script);
-      });
+    const canvas = await html2canvas(elementToCapture, {
+      scale: 2,
+      useCORS: true,
+      allowTaint: false,
+      logging: false,
+      backgroundColor: '#ffffff',
+      imageTimeout: 3000,
+    });
+
+    const imgData = canvas.toDataURL('image/jpeg', 0.95);
+    const pdf = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4',
+    });
+
+    const pdfWidth = pdf.internal.pageSize.getWidth();
+    const pdfHeight = pdf.internal.pageSize.getHeight();
+    const margin = 6;
+    const imgWidth = pdfWidth - margin * 2;
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+    let heightLeft = imgHeight;
+    let position = margin;
+
+    pdf.addImage(imgData, 'JPEG', margin, position, imgWidth, imgHeight);
+    heightLeft -= pdfHeight - margin * 2;
+
+    while (heightLeft > 0) {
+      position = heightLeft - imgHeight + margin;
+      pdf.addPage();
+      pdf.addImage(imgData, 'JPEG', margin, position, imgWidth, imgHeight);
+      heightLeft -= pdfHeight - margin * 2;
     }
 
-    if (typeof window !== 'undefined' && window.html2pdf) {
-      await window.html2pdf().set(opt).from(elementToCapture).save();
-    } else {
-      // Direct jsPDF fallback without triggering print
-      const canvas = await html2canvas(elementToCapture, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff',
+    pdf.save(filename);
+    return { success: true };
+  } catch (err: any) {
+    console.warn('html2canvas raster PDF export encountered an issue, generating clean vector jsPDF fallback:', err);
+
+    // Fallback: Generate clean text-and-vector PDF using pure jsPDF
+    try {
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(16);
+      pdf.setTextColor(11, 59, 96);
+      pdf.text(data.issuingAirlineName || 'ELECTRONIC TICKET RECEIPT', 14, 18);
+
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(100, 100, 100);
+      pdf.text(`Booking Reference (PNR): ${data.pnrLocator || 'N/A'}    Issue Date: ${data.formattedIssueDate || data.issueDate || 'Today'}`, 14, 25);
+      pdf.text(`Primary Ticket Number: ${data.ticketNumber || 'N/A'}    Office: ${data.officeId || 'DAC360'}`, 14, 31);
+
+      pdf.setDrawColor(11, 59, 96);
+      pdf.setLineWidth(0.5);
+      pdf.line(14, 34, 196, 34);
+
+      pdf.setFontSize(11);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(0, 0, 0);
+      pdf.text('PASSENGER INFORMATION:', 14, 42);
+
+      let y = 48;
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'normal');
+      (data.passengers || []).forEach((p, idx) => {
+        pdf.text(`${idx + 1}. ${p.displayName || p.fullName}  |  TKT: ${p.ticketNumber}  |  Fare: BDT ${(p.fare || data.baseFare || 0).toLocaleString()}  |  Total: BDT ${(p.totalAmount || data.totalFare || 0).toLocaleString()}`, 14, y);
+        y += 6;
       });
 
-      const imgData = canvas.toDataURL('image/jpeg', 0.98);
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4',
+      y += 4;
+      pdf.setFontSize(11);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('FLIGHT ITINERARY:', 14, y);
+      y += 6;
+
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'normal');
+      (data.segments || []).forEach((s, idx) => {
+        pdf.text(`Leg ${idx + 1}: ${s.airline} ${s.flightNumber} (${s.bookingClass})  ${s.date}  ${s.origin} (${s.originName}) -> ${s.destination} (${s.destName})`, 14, y);
+        y += 5;
+        pdf.text(`    Dep: ${formatGdsTime(s.depTime)}  Arr: ${formatGdsTime(s.arrTime)}  Status: ${s.status}  Baggage: ${s.baggage}`, 14, y);
+        y += 7;
       });
 
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
-      const imgWidth = pdfWidth - 12;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      y += 4;
+      pdf.setDrawColor(200, 200, 200);
+      pdf.line(14, y, 196, y);
+      y += 6;
 
-      let heightLeft = imgHeight;
-      let position = 6;
-
-      pdf.addImage(imgData, 'JPEG', 6, position, imgWidth, imgHeight);
-      heightLeft -= pdfHeight - 12;
-
-      while (heightLeft > 0) {
-        position = heightLeft - imgHeight + 6;
-        pdf.addPage();
-        pdf.addImage(imgData, 'JPEG', 6, position, imgWidth, imgHeight);
-        heightLeft -= pdfHeight - 12;
-      }
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(10);
+      pdf.text(`GRAND TOTAL: BDT ${(data.grandTotalFare || data.totalFare || 0).toLocaleString()}`, 14, y);
 
       pdf.save(filename);
+      return { success: true };
+    } catch (fallbackErr: any) {
+      console.error('jsPDF vector fallback failed, downloading text file:', fallbackErr);
+      downloadItrTextFile(data);
+      return { success: false, error: err?.message || 'Fallback to text receipt' };
     }
-  } catch (err) {
-    console.error('Direct PDF export error:', err);
-    // STRICT: DO NOT call window.print() or printItrDocument()
   } finally {
     if (tempContainer && document.body.contains(tempContainer)) {
       document.body.removeChild(tempContainer);

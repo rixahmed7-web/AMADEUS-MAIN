@@ -1,11 +1,14 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { ItrReceiptData } from '../types';
 import {
   downloadItrTextFile,
   downloadItrPdfFile,
+  downloadItrHtmlFile,
   formatGdsTime,
   formatGdsDatePretty,
+  buildItrReceiptData,
 } from '../utils/itrReceipt';
+import { createInitialSession, ticketSalesDatabase } from '../utils/gdsEngine';
 import {
   Printer,
   Download,
@@ -16,6 +19,8 @@ import {
   AlertTriangle,
   Loader2,
   FileText,
+  ExternalLink,
+  RefreshCw,
 } from 'lucide-react';
 
 interface ItrReceiptModalProps {
@@ -27,17 +32,27 @@ interface ItrReceiptModalProps {
 
 export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
   isOpen,
-  data,
+  data: propData,
   onClose,
   onSendEmail,
 }) => {
+  // CRITICAL: ALL HOOKS MUST BE UNCONDITIONALLY AT THE TOP LEVEL BEFORE ANY RETURN
+  const [internalData, setInternalData] = useState<ItrReceiptData | null>(propData);
   const [emailInput, setEmailInput] = useState('');
   const [emailSentSuccess, setEmailSentSuccess] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [logoImgError, setLogoImgError] = useState(false);
+  const [downloadSuccessMsg, setDownloadSuccessMsg] = useState<string | null>(null);
   const receiptCardRef = useRef<HTMLDivElement>(null);
 
-  if (!isOpen || !data) return null;
+  // Sync prop changes
+  useEffect(() => {
+    if (propData) {
+      setInternalData(propData);
+    }
+  }, [propData]);
+
+  const data = internalData || propData;
 
   // Reliable Modal Close Handler: Re-enables background scrolling and returns focus to top CLI input
   const handleClose = () => {
@@ -50,19 +65,15 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
       if (cliInput) {
         cliInput.focus();
       }
-    }, 40);
+    }, 50);
   };
 
   // Keyboard Escape navigation & body overflow lock
-  React.useEffect(() => {
+  useEffect(() => {
     if (!isOpen) return;
 
     if (typeof document !== 'undefined') {
       document.body.style.overflow = 'hidden';
-      const modalEl = document.getElementById('itr-receipt-modal');
-      if (modalEl) {
-        modalEl.style.display = 'flex';
-      }
     }
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -82,6 +93,48 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
     };
   }, [isOpen]);
 
+  // ALL HOOKS ARE ABOVE THIS LINE!
+  if (!isOpen) return null;
+
+  // Fallback UI if data is missing or loading
+  if (!data) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs">
+        <div className="bg-white rounded-lg p-6 max-w-md w-full shadow-2xl text-center space-y-4">
+          <div className="w-12 h-12 bg-blue-100 text-[#0b3b60] rounded-full flex items-center justify-center mx-auto">
+            <FileText className="w-6 h-6" />
+          </div>
+          <h3 className="font-bold text-lg text-slate-800">
+            টিকিট ডেটা পাওয়া যায়নি (No E-Ticket Loaded)
+          </h3>
+          <p className="text-sm text-slate-600">
+            বর্তমানে কোনো সক্রিয় টিকিট রেকর্ড পাওয়া যায়নি। টিকিট দেখতে টার্মিনালে <code className="font-mono font-bold text-blue-700 bg-slate-100 px-1 py-0.5 rounded">TTP</code> কমান্ড দিয়ে টিকিট ইস্যু করুন অথবা বুকিং নিশ্চিত করুন।
+          </p>
+          <div className="flex flex-col gap-2 pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                const sample = buildItrReceiptData(createInitialSession(), ticketSalesDatabase);
+                setInternalData(sample);
+              }}
+              className="px-4 py-2 bg-[#005eb8] hover:bg-[#00478c] text-white font-bold text-sm rounded shadow cursor-pointer flex items-center justify-center gap-2"
+            >
+              <RefreshCw className="w-4 h-4" />
+              <span>নমুনা টিকিট লোড করুন (Load Sample)</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleClose}
+              className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold text-sm rounded cursor-pointer"
+            >
+              বন্ধ করুন (Close)
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const handlePrintClick = () => {
     window.print();
   };
@@ -98,67 +151,75 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
     }, 3500);
   };
 
-  // Reliable Fail-Safe PDF Download Handler using html2pdf.js
-  const handleDirectPdfDownload = async () => {
-    setIsGeneratingPdf(true);
-    const currentPNR = data?.pnrLocator || 'AMADEUS';
-    const element =
-      document.getElementById('ticketPrintArea') ||
-      document.querySelector('.ticket-card-content') ||
-      receiptCardRef.current ||
-      document.getElementById('itr-printable-receipt');
-
-    if (!element) {
-      console.warn('Printable ticket container element not found, falling back to window.print()');
-      window.print();
-      setIsGeneratingPdf(false);
-      return;
-    }
-
-    const opt = {
-      margin: [5, 5, 5, 5],
-      filename: `ETicket_${currentPNR || 'AMADEUS'}_${Date.now()}.pdf`,
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: {
-        scale: 2,
-        useCORS: true,
-        allowTaint: true,
-        logging: false,
-        backgroundColor: '#ffffff',
-      },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-    };
-
+  // Open ticket in a clean standalone new tab for reliable viewing & printing
+  const handleOpenInNewTab = () => {
+    if (!data) return;
     try {
-      const html2pdfLib = typeof window !== 'undefined' ? (window as any).html2pdf : null;
-
-      if (typeof html2pdfLib === 'function') {
-        try {
-          await html2pdfLib().set(opt).from(element).save();
-          setIsGeneratingPdf(false);
-          return;
-        } catch (canvasErr) {
-          console.warn('html2pdf direct failed, trying fallback:', canvasErr);
-        }
+      localStorage.setItem('amadeus_active_ticket', JSON.stringify(data));
+      const url = `${window.location.origin}${window.location.pathname}?view=ticket`;
+      const win = window.open(url, '_blank');
+      if (!win) {
+        // Fallback: download standalone HTML
+        downloadItrHtmlFile(data);
+        setDownloadSuccessMsg('HTML টিকিট ফাইল ডাউনলোড সম্পন্ন হয়েছে');
+        setTimeout(() => setDownloadSuccessMsg(null), 3000);
       }
+    } catch (e) {
+      console.error('Failed to open ticket in new tab:', e);
+      downloadItrHtmlFile(data);
+      setDownloadSuccessMsg('HTML টিকিট ফাইল ডাউনলোড সম্পন্ন হয়েছে');
+      setTimeout(() => setDownloadSuccessMsg(null), 3000);
+    }
+  };
 
-      // Dynamic script loading or secondary fallback
-      await downloadItrPdfFile(data, element as HTMLElement);
+  // Reliable Fail-Safe PDF Download Handler using local jsPDF & html2canvas (NO CDN, NO window.print())
+  const handleDirectPdfDownload = async () => {
+    if (!data) return;
+    setIsGeneratingPdf(true);
+    try {
+      const res = await downloadItrPdfFile(data, receiptCardRef.current);
+      if (res && res.success) {
+        setDownloadSuccessMsg('PDF ফাইল সফলভাবে ডাউনলোড হয়েছে');
+      } else {
+        setDownloadSuccessMsg('টিকিট ফাইল তৈরি হয়েছে');
+      }
+      setTimeout(() => setDownloadSuccessMsg(null), 3000);
     } catch (err) {
-      console.error('PDF generation error, falling back to print:', err);
-      window.print();
+      console.error('PDF generation error, downloading fallback:', err);
+      downloadItrHtmlFile(data);
+      setDownloadSuccessMsg('HTML টিকিট ফাইল ডাউনলোড করা হয়েছে');
+      setTimeout(() => setDownloadSuccessMsg(null), 3000);
     } finally {
       setIsGeneratingPdf(false);
     }
   };
 
+  const handleDownloadHtml = () => {
+    if (!data) return;
+    downloadItrHtmlFile(data);
+    setDownloadSuccessMsg('HTML টিকিট ডাউনলোড সম্পন্ন হয়েছে');
+    setTimeout(() => setDownloadSuccessMsg(null), 3000);
+  };
+
+  const handleDownloadTxt = () => {
+    if (!data) return;
+    downloadItrTextFile(data);
+    setDownloadSuccessMsg('টেক্সট রসিদ ডাউনলোড সম্পন্ন হয়েছে');
+    setTimeout(() => setDownloadSuccessMsg(null), 3000);
+  };
+
   const primaryAirlineName = data.issuingAirlineName || 'US-BANGLA AIRLINES';
   const primarySlogan = data.airlineSlogan || 'FLY FAST FLY SAFE';
   const sloganColor = data.airlineSloganColor || '#E31B23';
+  const passengers = data.passengers || [];
+  const segments = data.segments || [];
+  const grandTotal = Number(data.grandTotalFare ?? data.totalFare ?? 0);
+  const baseFare = Number(data.baseFare ?? 0);
+  const taxFare = Number(data.tax ?? 0);
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-2 sm:p-4 backdrop-blur-xs overflow-y-auto no-print"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-2 sm:p-4 backdrop-blur-xs overflow-y-auto"
       id="itr-receipt-modal"
       style={{ display: 'flex' }}
       onClick={(e) => {
@@ -172,7 +233,7 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Control Bar with Quick Action Buttons */}
-        <div className="bg-[#0b3b60] text-white px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3 shrink-0 shadow-md">
+        <div className="bg-[#0b3b60] text-white px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3 shrink-0 shadow-md no-print">
           <div className="flex items-center gap-3">
             <div className="p-1.5 bg-white/10 rounded">
               <FileText className="w-5 h-5 text-amber-300" />
@@ -185,13 +246,24 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
                 </span>
               </div>
               <div className="text-[11px] text-blue-100 font-medium">
-                PNR: {data.pnrLocator} &bull; Issue Date: {data.formattedIssueDate || data.issueDate}
+                PNR: {data.pnrLocator || 'XFV45T'} &bull; Issue Date: {data.formattedIssueDate || data.issueDate || 'Today'}
               </div>
             </div>
           </div>
 
           {/* Action Buttons at Top of Modal */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              id="btn-open-new-tab-top"
+              onClick={handleOpenInNewTab}
+              className="px-3 py-1.5 bg-blue-700 hover:bg-blue-800 text-white font-bold text-xs sm:text-sm rounded shadow-sm flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="Open ticket in full clean browser tab"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span>নতুন ট্যাবে দেখুন</span>
+            </button>
+
             <button
               type="button"
               id="btn-download-pdf-top"
@@ -215,13 +287,23 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
 
             <button
               type="button"
+              id="btn-download-html-top"
+              onClick={handleDownloadHtml}
+              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm rounded shadow-sm flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="Download standalone HTML file"
+            >
+              <span>🌐 HTML</span>
+            </button>
+
+            <button
+              type="button"
               id="btn-print-ticket-top"
               onClick={handlePrintClick}
               className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm rounded shadow-sm flex items-center gap-1.5 transition-colors cursor-pointer"
               title="Print ticket on clean A4 sheet"
             >
               <Printer className="w-3.5 h-3.5" />
-              <span>🖨️ Print Ticket</span>
+              <span>🖨️ Print</span>
             </button>
 
             <button
@@ -236,6 +318,23 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Dynamic Download Success Banner */}
+        {downloadSuccessMsg && (
+          <div className="bg-emerald-700 text-white px-4 py-2 text-xs font-semibold flex items-center justify-between no-print animate-in fade-in">
+            <div className="flex items-center gap-2">
+              <Check className="w-4 h-4" />
+              <span>{downloadSuccessMsg}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDownloadSuccessMsg(null)}
+              className="text-emerald-200 hover:text-white"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
 
         {/* Scrollable Document Canvas (Single-Page A4 Printable Ticket Container) */}
         <div
@@ -271,7 +370,7 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
                 ) : (
                   <div className="h-11 px-3 bg-[#0b3b60] text-white rounded flex items-center gap-2">
                     <Plane className="w-5 h-5 text-amber-300" />
-                    <div className="font-black text-sm tracking-wider">{data.issuingAirline}</div>
+                    <div className="font-black text-sm tracking-wider">{data.issuingAirline || 'AIRLINE'}</div>
                   </div>
                 )}
                 <div>
@@ -292,7 +391,7 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
                   E-TICKET / BOOKING CONFIRMATION
                 </h1>
                 <div className="text-xs text-slate-600 font-semibold mt-0.5">
-                  Date: <strong className="text-slate-900">{data.formattedIssueDate || data.issueDate}</strong>
+                  Date: <strong className="text-slate-900">{data.formattedIssueDate || data.issueDate || 'Today'}</strong>
                 </div>
               </div>
             </div>
@@ -305,7 +404,7 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
                   BOOKING REFERENCE (PNR)
                 </div>
                 <div className="font-black text-lg sm:text-xl text-[#0b3b60] flex items-center gap-2 mt-0.5 font-mono">
-                  <span>{data.pnrLocator}</span>
+                  <span>{data.pnrLocator || 'XFV45T'}</span>
                   <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded tracking-normal">
                     [ISSUED]
                   </span>
@@ -318,10 +417,10 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
                   ROUTE &amp; JOURNEY
                 </div>
                 <div className="font-bold text-sm sm:text-base text-slate-900 mt-0.5">
-                  {data.routeJourney || 'Dhaka (DAC) ✈ Dubai (DXB)'}
+                  {data.routeJourney || 'Dhaka (DAC) ✈ Destination'}
                 </div>
                 <div className="text-[11px] text-slate-600 font-medium mt-0.5">
-                  {data.journeySubtitle || 'One Way | 2 Adults'}
+                  {data.journeySubtitle || `${passengers.length} Passenger${passengers.length > 1 ? 's' : ''}`}
                 </div>
               </div>
 
@@ -331,7 +430,7 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
                   BOOKING TOTAL AMOUNT
                 </div>
                 <div className="font-black text-xl sm:text-2xl text-[#0b3b60] mt-0.5">
-                  ৳ {data.grandTotalFare.toLocaleString()}
+                  ৳ {grandTotal.toLocaleString()}
                 </div>
               </div>
             </div>
@@ -344,15 +443,17 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
               </div>
 
               <div className="space-y-3 mt-0">
-                {data.segments.map((seg, idx) => {
-                  const isTransit = data.segments.length > 1;
+                {segments.map((seg, idx) => {
+                  const isTransit = segments.length > 1;
                   const flightTypeLabel = isTransit
-                    ? `Transit Leg ${idx + 1} of ${data.segments.length}`
+                    ? `Transit Leg ${idx + 1} of ${segments.length}`
                     : 'Direct Flight';
+                  const origCityName = seg.originName || seg.origin || 'Departure';
+                  const destCityName = seg.destName || seg.destination || 'Arrival';
 
                   return (
                     <div
-                      key={seg.segNum}
+                      key={seg.segNum || idx}
                       className="border border-slate-300 border-t-0 rounded-b overflow-hidden shadow-2xs bg-white"
                     >
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 items-center">
@@ -362,19 +463,19 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
                             Origin / Departure
                           </div>
                           <div className="font-bold text-sm text-slate-900 mt-0.5">
-                            {seg.originName}
+                            {origCityName}
                           </div>
                           <div className="text-xs text-slate-600">
                             {seg.origin === 'DAC'
                               ? 'Hazrat Shahjalal Intl Airport'
-                              : `${seg.originName} Airport`}
+                              : `${origCityName} Airport`}
                             {seg.originTerminal ? `, Terminal ${seg.originTerminal}` : ''}
                           </div>
                           <div className="font-black text-xl sm:text-2xl text-[#0b3b60] mt-1.5 font-mono">
-                            {formatGdsTime(seg.depTime)}
+                            {formatGdsTime(seg.depTime || '0830')}
                           </div>
                           <div className="text-xs font-semibold text-slate-700 mt-0.5">
-                            {formatGdsDatePretty(seg.date)}
+                            {formatGdsDatePretty(seg.date || '30SEP')}
                           </div>
                         </div>
 
@@ -398,19 +499,19 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
                             Destination / Arrival
                           </div>
                           <div className="font-bold text-sm text-slate-900 mt-0.5">
-                            {seg.destName}
+                            {destCityName}
                           </div>
                           <div className="text-xs text-slate-600">
-                            {seg.destName.includes('DXB') || seg.destName.includes('Dubai')
+                            {destCityName && (destCityName.includes('DXB') || destCityName.includes('Dubai'))
                               ? 'Dubai Intl Airport'
-                              : `${seg.destName} Airport`}
+                              : `${destCityName} Airport`}
                             {seg.destTerminal ? `, Terminal ${seg.destTerminal}` : ''}
                           </div>
                           <div className="font-black text-xl sm:text-2xl text-[#0b3b60] mt-1.5 font-mono">
-                            {formatGdsTime(seg.arrTime)}
+                            {formatGdsTime(seg.arrTime || '1230')}
                           </div>
                           <div className="text-xs font-semibold text-slate-700 mt-0.5">
-                            {formatGdsDatePretty(seg.date)}
+                            {formatGdsDatePretty(seg.date || '30SEP')}
                           </div>
                         </div>
                       </div>
@@ -418,13 +519,13 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
                       {/* Segment Footer Strip */}
                       <div className="bg-[#f8fafc] border-t border-slate-200 px-4 py-2 text-xs text-slate-700 flex flex-wrap items-center justify-between gap-2">
                         <div>
-                          <strong>Operating Carrier:</strong> {primaryAirlineName}
+                          <strong>Operating Carrier:</strong> {seg.airlineName || primaryAirlineName}
                         </div>
                         <div>
                           <strong>Flight No:</strong> {seg.airline} {seg.flightNumber}
                         </div>
                         <div>
-                          <strong>Class:</strong> {seg.bookingClass === 'J' ? 'Business' : 'Economy'} ({seg.bookingClass})
+                          <strong>Class:</strong> {seg.bookingClass === 'J' ? 'Business' : 'Economy'} ({seg.bookingClass || 'Y'})
                         </div>
                         <div className="text-emerald-700 font-bold flex items-center gap-1">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 inline-block"></span>
@@ -456,35 +557,41 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-medium">
-                    {data.passengers.map((p) => (
-                      <tr key={p.passengerIndex} className="hover:bg-sky-50/40 transition-colors">
-                        <td className="py-3 px-3 text-center font-bold text-slate-500">
-                          {p.passengerIndex}
-                        </td>
-                        <td className="py-3 px-3">
-                          <div className="font-bold text-slate-900 text-xs sm:text-[13px]">
-                            {p.displayName || p.fullName}
-                          </div>
-                          {p.foid && (
-                            <div className="text-[10px] text-slate-500 font-mono mt-0.5">
-                              {p.foid}
+                    {passengers.map((p, pIdx) => {
+                      const pFare = Number(p.fare ?? baseFare ?? 0);
+                      const pTax = Number(p.taxes ?? taxFare ?? 0);
+                      const pTotal = Number(p.totalAmount ?? (pFare + pTax));
+
+                      return (
+                        <tr key={p.passengerIndex || pIdx} className="hover:bg-sky-50/40 transition-colors">
+                          <td className="py-3 px-3 text-center font-bold text-slate-500">
+                            {p.passengerIndex || pIdx + 1}
+                          </td>
+                          <td className="py-3 px-3">
+                            <div className="font-bold text-slate-900 text-xs sm:text-[13px]">
+                              {p.displayName || p.fullName || 'PASSENGER'}
                             </div>
-                          )}
-                        </td>
-                        <td className="py-3 px-3 font-mono font-bold text-[#0b3b60] text-xs sm:text-[13px]">
-                          {p.ticketNumber}
-                        </td>
-                        <td className="py-3 px-3 text-slate-800">
-                          ৳ {(p.fare || data.baseFare).toLocaleString()}
-                        </td>
-                        <td className="py-3 px-3 text-slate-800">
-                          ৳ {(p.taxes || data.tax).toLocaleString()}
-                        </td>
-                        <td className="py-3 px-3 font-bold text-[#0b3b60]">
-                          ৳ {(p.totalAmount || data.totalFare).toLocaleString()}
-                        </td>
-                      </tr>
-                    ))}
+                            {p.foid && (
+                              <div className="text-[10px] text-slate-500 font-mono mt-0.5">
+                                {p.foid}
+                              </div>
+                            )}
+                          </td>
+                          <td className="py-3 px-3 font-mono font-bold text-[#0b3b60] text-xs sm:text-[13px]">
+                            {p.ticketNumber || 'TKT ISSUED'}
+                          </td>
+                          <td className="py-3 px-3 text-slate-800">
+                            ৳ {pFare.toLocaleString()}
+                          </td>
+                          <td className="py-3 px-3 text-slate-800">
+                            ৳ {pTax.toLocaleString()}
+                          </td>
+                          <td className="py-3 px-3 font-bold text-[#0b3b60]">
+                            ৳ {pTotal.toLocaleString()}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -526,15 +633,15 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
                   </div>
                   <div className="space-y-2 text-slate-700">
                     <div className="flex justify-between items-center">
-                      <span>Base Fare ({data.passengers.length} Passenger{data.passengers.length > 1 ? 's' : ''}):</span>
+                      <span>Base Fare ({passengers.length} Passenger{passengers.length > 1 ? 's' : ''}):</span>
                       <span className="font-bold text-slate-900">
-                        ৳ {(data.baseFare * data.passengers.length).toLocaleString()}
+                        ৳ {(baseFare * (passengers.length || 1)).toLocaleString()}
                       </span>
                     </div>
                     <div className="flex justify-between items-center">
                       <span>Total Taxes:</span>
                       <span className="font-bold text-slate-900">
-                        ৳ {(data.tax * data.passengers.length).toLocaleString()}
+                        ৳ {(taxFare * (passengers.length || 1)).toLocaleString()}
                       </span>
                     </div>
                   </div>
@@ -543,7 +650,7 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
                 <div className="border-t-2 border-[#0b3b60] pt-2.5 mt-3 flex justify-between items-center">
                   <span className="font-black text-sm text-[#0b3b60]">Grand Total:</span>
                   <span className="font-black text-xl sm:text-2xl text-[#0b3b60]">
-                    ৳ {data.grandTotalFare.toLocaleString()}
+                    ৳ {grandTotal.toLocaleString()}
                   </span>
                 </div>
               </div>
@@ -604,10 +711,28 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
           <div className="text-[11px] text-slate-500 font-medium">
             Official E-Ticket Format &bull; IATA Resolution 722g Compliant
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <button
               type="button"
-              onClick={() => downloadItrTextFile(data)}
+              id="btn-open-new-tab-bottom"
+              onClick={handleOpenInNewTab}
+              className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-300 text-blue-800 font-bold text-xs rounded shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="Open ticket in a new browser tab"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span>নতুন ট্যাবে দেখুন</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleDownloadHtml}
+              className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-300 text-blue-800 font-semibold text-xs rounded shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="Download full standalone HTML"
+            >
+              <span>Download HTML</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleDownloadTxt}
               className="px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 font-semibold text-xs rounded shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <Download className="w-3.5 h-3.5" />

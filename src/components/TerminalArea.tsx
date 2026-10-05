@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { TerminalOutputItem, ItrReceiptData } from '../types';
-import { printItrDocument, downloadItrTextFile, downloadItrPdfFile } from '../utils/itrReceipt';
-import { Printer, Download, FileText, Loader2 } from 'lucide-react';
+import { printItrDocument, downloadItrTextFile, downloadItrPdfFile, generateItrHtmlDocument } from '../utils/itrReceipt';
+import { Printer, Download, FileText, Loader2, ExternalLink } from 'lucide-react';
 
 interface TerminalAreaProps {
   outputs: TerminalOutputItem[];
