@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { TerminalOutputItem, ItrReceiptData } from '../types';
 import { printItrDocument, downloadItrTextFile, downloadItrPdfFile, generateItrHtmlDocument } from '../utils/itrReceipt';
-import { Printer, Download, FileText, Loader2, ExternalLink } from 'lucide-react';
+import { Printer, Download, FileText, Loader2, ExternalLink, Share2 } from 'lucide-react';
 
 interface TerminalAreaProps {
   outputs: TerminalOutputItem[];
@@ -12,6 +12,8 @@ interface TerminalAreaProps {
   onSelectFlightDo?: (lineNum: number) => void;
   onOpenItrModal?: (data?: ItrReceiptData) => void;
   onPrintItr?: (data?: ItrReceiptData) => void;
+  onOpenShareModal?: (data?: ItrReceiptData) => void;
+  isSearching?: boolean;
 }
 
 export const TerminalArea: React.FC<TerminalAreaProps> = ({
@@ -23,6 +25,8 @@ export const TerminalArea: React.FC<TerminalAreaProps> = ({
   onSelectFlightDo,
   onOpenItrModal,
   onPrintItr,
+  onOpenShareModal,
+  isSearching = false,
 }) => {
   const [currentInput, setCurrentInput] = useState('');
   const [historyIndex, setHistoryIndex] = useState<number>(-1);
@@ -388,6 +392,12 @@ export const TerminalArea: React.FC<TerminalAreaProps> = ({
               style={{ animationDuration: '0.9s' }}
               id="terminal-block-cursor"
             />
+            {isSearching && (
+              <div className="flex items-center gap-1.5 ml-3 px-2 py-0.5 bg-blue-50 text-[#005eb8] border border-blue-200 rounded text-[11px] font-mono font-bold animate-pulse select-none">
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-[#005eb8]" />
+                <span>Searching (0.5s)...</span>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -402,21 +412,47 @@ export const TerminalArea: React.FC<TerminalAreaProps> = ({
           <div key={item.id} className="space-y-1">
             {item.type === 'command' ? (
               <div
-                className={`flex items-center text-[#111111] font-mono text-[13px] ${
+                className={`flex items-center font-mono text-[13px] ${
                   idx > 0
-                    ? 'pt-4 mt-3 border-t border-dashed border-[#dce3ee] opacity-80'
-                    : 'pb-0.5 font-bold'
+                    ? 'pt-4 mt-3 border-t border-dashed border-[#dce3ee]'
+                    : 'pb-0.5'
                 }`}
               >
-                <span className="text-[#005eb8] font-bold mr-2 select-none">&gt;</span>
-                <span className={idx === 0 ? 'text-[#005eb8] font-bold' : 'text-[#444444] font-semibold'}>
+                <span
+                  className={`font-bold mr-2 select-none text-[14px] ${
+                    item.isError ? 'text-[#dc2626]' : 'text-[#16a34a]'
+                  }`}
+                >
+                  &gt;
+                </span>
+                <span
+                  className={`font-bold tracking-tight ${
+                    item.isError ? 'text-[#dc2626]' : 'text-[#16a34a]'
+                  }`}
+                >
                   {item.content}
                 </span>
+                {item.isError ? (
+                  <span className="ml-2.5 px-1.5 py-0.5 text-[10px] uppercase font-sans font-bold bg-red-100 text-red-700 rounded border border-red-200 select-none">
+                    Error
+                  </span>
+                ) : (
+                  <span className="ml-2 text-[11px] text-emerald-600 font-sans font-bold select-none opacity-80">
+                    ✓
+                  </span>
+                )}
                 {idx > 0 && (
-                  <span className="ml-3 text-[11px] text-[#888888] font-sans font-normal select-none">
+                  <span className="ml-auto text-[11px] text-[#888888] font-sans font-normal select-none">
                     [Previous Screen]
                   </span>
                 )}
+              </div>
+            ) : item.isLoading ? (
+              <div className="flex items-center gap-2.5 py-3 px-3.5 my-1.5 bg-blue-50/80 border border-blue-200 rounded font-mono text-[13px] text-[#005eb8] animate-pulse">
+                <Loader2 className="w-4 h-4 animate-spin text-[#005eb8] shrink-0" />
+                <span className="font-bold">
+                  {item.content || 'SEARCHING LIVE GDS FARES & FLIGHT SCHEDULES... PLEASE WAIT'}
+                </span>
               </div>
             ) : (
               <div className="pl-0">
@@ -441,6 +477,23 @@ export const TerminalArea: React.FC<TerminalAreaProps> = ({
                       >
                         <FileText className="w-4 h-4" />
                         <span>📄 View &amp; Download E-Ticket / ITR</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        id={`btn-share-commands-${item.id}`}
+                        onClick={() => {
+                          if (onOpenShareModal) {
+                            onOpenShareModal(item.itrData);
+                          } else if (onOpenItrModal) {
+                            onOpenItrModal(item.itrData);
+                          }
+                        }}
+                        className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-bold rounded shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                        title="Share or copy booking command history"
+                      >
+                        <Share2 className="w-4 h-4 text-emerald-100" />
+                        <span>Share Your Command</span>
                       </button>
 
                       <span className="text-xs text-slate-700 font-medium">

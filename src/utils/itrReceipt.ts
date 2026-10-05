@@ -308,7 +308,8 @@ export const formatPassengerDisplayName = (p: {
 
 export const buildItrReceiptData = (
   session: PnrSession,
-  ticketSalesDb: TicketSaleRecord[] = []
+  ticketSalesDb: TicketSaleRecord[] = [],
+  customCommandHistory?: string[]
 ): ItrReceiptData | null => {
   // 1. Check if an active ticket exists in current session or ticket sales database
   const saleMatch = ticketSalesDb.find(
@@ -671,6 +672,7 @@ export const buildItrReceiptData = (
       ...(chdCount > 0 ? { chd: { count: chdCount, base: baseFarePerChd, tax: taxPerChd, total: totalPerChd } } : {}),
       ...(infCount > 0 ? { inf: { count: infCount, base: baseFarePerInf, tax: taxPerInf, total: totalPerInf } } : {}),
     },
+    commandHistory: customCommandHistory || session?.commandHistory || [],
   };
 };
 

@@ -29,7 +29,52 @@ export interface CommandResult {
     message: string;
   };
   itrData?: ItrReceiptData;
+  isError?: boolean;
 }
+
+// Helper to determine if a GDS response indicates an error or invalid command
+export const isGdsOutputError = (output: string): boolean => {
+  if (!output) return false;
+  const trimmed = output.trim();
+  const upper = trimmed.toUpperCase();
+
+  // Known success indicators that might contain word fragments
+  if (
+    upper.includes('OK ETICKET ISSUED') ||
+    upper.includes('TKT ISSUED / OK') ||
+    upper.includes('TST 00001 CREATED') ||
+    upper.includes('AMADEUS PASSENGER ITINERARY') ||
+    upper.includes('RP/DAC') ||
+    upper.includes('** AMADEUS AVAILABILITY') ||
+    upper.includes('FXD BEST BUY') ||
+    upper.includes('FQD ') ||
+    upper.includes('IGNORED')
+  ) {
+    return false;
+  }
+
+  // Error patterns
+  return (
+    upper.startsWith('NEED ') ||
+    upper.startsWith('INVALID ') ||
+    upper.startsWith('FORMAT ERROR') ||
+    upper.startsWith('COMMAND NOT RECOGNIZED') ||
+    upper.startsWith('NO ') ||
+    upper.startsWith('UNABLE ') ||
+    upper.startsWith('CHECK ') ||
+    upper.startsWith('RESTRICTED') ||
+    upper.startsWith('REJECTED') ||
+    upper.startsWith('RECEIVED FROM REQUIRED') ||
+    upper.startsWith('ERROR:') ||
+    upper.startsWith('ERR ') ||
+    upper.includes('INVALID COMMAND OR ENTRY FORMAT') ||
+    upper.includes('NO PNR RECORD FOUND') ||
+    upper.includes('ENTRY RESTRICTED') ||
+    upper.includes('SIMULATOR LIMITATION') ||
+    upper.includes('NOT ENTERED') ||
+    upper.includes('UNRECOGNIZED')
+  );
+};
 
 // System Date helper for Amadeus standard timestamps
 export const getTodayGdsDate = (): { dateStr: string; dateToken: string; year: number } => {
@@ -298,18 +343,26 @@ export const executeGdsCommand = (
       if (res.isItr) isItr = true;
     }
 
+    const combinedOutput = outputs.join('\n\n');
+    const hasError = isGdsOutputError(combinedOutput);
+
     return {
-      output: outputs.join('\n\n'),
+      output: combinedOutput,
       updatedSession: activeSession,
       triggerPrint,
       emailSent,
       itrData,
       isTtp: isTtp || undefined,
       isItr: isItr || undefined,
+      isError: hasError,
     };
   }
 
-  return executeSingleGdsCommand(trimmed, currentSession, savedPnrs);
+  const singleRes = executeSingleGdsCommand(trimmed, currentSession, savedPnrs);
+  return {
+    ...singleRes,
+    isError: singleRes.isError !== undefined ? singleRes.isError : isGdsOutputError(singleRes.output),
+  };
 };
 
 const executeSingleGdsCommand = (
@@ -1291,9 +1344,10 @@ const executeSingleGdsCommand = (
     const isBusiness = firstSeg?.bookingClass === 'J' || firstSeg?.bookingClass === 'C';
     const isRoundTrip = currentSession.segments.length > 1 && lastSeg?.destination === firstSeg?.origin;
 
-    const dynamicSector = calculateSectorFare(firstSeg?.origin || 'DAC', lastSeg?.destination || 'JED', isBusiness, isRoundTrip);
-    const baseUnitFare = currentSession.pricing?.baseFare ? Math.round(currentSession.pricing.baseFare / (adtCount || 1)) : dynamicSector.base;
-    const taxesUnit = currentSession.pricing?.taxes ? Math.round(currentSession.pricing.taxes / (adtCount || 1)) : dynamicSector.tax;
+    const destinationCity = (isRoundTrip ? firstSeg?.destination : lastSeg?.destination) || 'CGP';
+    const dynamicSector = calculateSectorFare(firstSeg?.origin || 'DAC', destinationCity, isBusiness, isRoundTrip);
+    const baseUnitFare = dynamicSector.base;
+    const taxesUnit = dynamicSector.tax;
 
     const adtTotal = (baseUnitFare + taxesUnit) * adtCount;
     const chdTotal = Math.round(((baseUnitFare * 0.75) + (taxesUnit * 0.85)) * chdCount);

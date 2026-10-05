@@ -164,6 +164,7 @@ export interface PnrSession {
   };
   lastAvailability?: AvailabilityOption[];
   lastFareSearch?: FareSearchOption[];
+  commandHistory?: string[];
 }
 
 export interface ItrFlightSegment {
@@ -254,6 +255,7 @@ export interface ItrReceiptData {
     chd?: { count: number; base: number; tax: number; total: number };
     inf?: { count: number; base: number; tax: number; total: number };
   };
+  commandHistory?: string[];
 }
 
 export interface TerminalOutputItem {
@@ -264,6 +266,9 @@ export interface TerminalOutputItem {
   isItr?: boolean;
   isTtp?: boolean;
   itrData?: ItrReceiptData;
+  isError?: boolean;
+  isSuccess?: boolean;
+  isLoading?: boolean;
 }
 
 export interface CommandPageTab {

@@ -12,6 +12,7 @@ import { PnrOverviewPanel } from './components/PnrOverviewPanel';
 import { PartnerBadges } from './components/PartnerBadges';
 import { ItrReceiptModal } from './components/ItrReceiptModal';
 import { StandaloneTicketView } from './components/StandaloneTicketView';
+import { ShareCommandModal } from './components/ShareCommandModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Check, X } from 'lucide-react';
 
@@ -71,6 +72,15 @@ export default function App() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [activeItrData, setActiveItrData] = useState<ItrReceiptData | null>(null);
   const [isItrModalOpen, setIsItrModalOpen] = useState<boolean>(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState<boolean>(false);
+  const [shareModalData, setShareModalData] = useState<ItrReceiptData | null>(null);
+  const [isSearching, setIsSearching] = useState<boolean>(false);
+
+  // Session reference to ensure async search timeouts always use the latest PNR state
+  const sessionRef = useRef<PnrSession>(session);
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
 
   // Auto-dismiss toast notification after 5 seconds
   useEffect(() => {
@@ -81,6 +91,29 @@ export default function App() {
       return () => clearTimeout(timer);
     }
   }, [toastMessage]);
+
+  // Open the Share Your Command modal
+  const handleOpenShareModal = (data?: ItrReceiptData) => {
+    const receipt =
+      data ||
+      activeItrData ||
+      buildItrReceiptData(sessionRef.current, ticketSalesDatabase, activeTab.commandHistory) ||
+      buildItrReceiptData(createInitialSession(), ticketSalesDatabase, activeTab.commandHistory);
+    setShareModalData(receipt);
+    setIsShareModalOpen(true);
+  };
+
+  // Helper to determine if a command is a Flight or Fare search requiring 0.5s realistic loading delay
+  const isFlightOrFareSearch = (cmdStr: string): boolean => {
+    const upper = cmdStr.trim().toUpperCase();
+    return (
+      upper.startsWith('AN') ||
+      upper.startsWith('SN') ||
+      upper.startsWith('FXD') ||
+      upper.startsWith('FQD') ||
+      upper.startsWith('FQP')
+    );
+  };
 
   // Handle successful login
   const handleLoginSuccess = (userData: { username: string; officeId: string; dutyCode: string }) => {
@@ -164,16 +197,107 @@ export default function App() {
       return;
     }
 
-    // Run command in GDS engine
-    const result = executeGdsCommand(cmd, session, savedPnrsRef.current);
+    // Check if this command is a Flight or Fare search requiring 0.5s realistic loading delay
+    const needsSearchDelay = isFlightOrFareSearch(cmd);
 
-    // Update active PNR session
-    setSession(result.updatedSession);
+    if (needsSearchDelay) {
+      const cmdId = `cmd-${Date.now()}`;
+      const loadingId = `loading-${Date.now()}`;
+
+      // User command line (starts green while searching, updated upon result)
+      const cmdItem: TerminalOutputItem = {
+        id: cmdId,
+        type: 'command',
+        content: cmd.toLowerCase(),
+        isError: false,
+      };
+
+      const loadingItem: TerminalOutputItem = {
+        id: loadingId,
+        type: 'response',
+        content: 'SEARCHING LIVE GDS FARES & FLIGHT SCHEDULES... PLEASE WAIT',
+        isLoading: true,
+      };
+
+      setIsSearching(true);
+
+      // Prepend command and loading item to active tab
+      setTabs((prev) =>
+        prev.map((t) =>
+          t.id === activeTabId
+            ? {
+                ...t,
+                outputs: [cmdItem, loadingItem, ...t.outputs],
+                commandHistory: [...t.commandHistory, cmd],
+              }
+            : t
+        )
+      );
+
+      // Exactly 0.5 second (500ms) delay for realistic feel
+      setTimeout(() => {
+        const result = executeGdsCommand(cmd, sessionRef.current, savedPnrsRef.current);
+        const updatedWithHistory: PnrSession = {
+          ...result.updatedSession,
+          commandHistory: [...(result.updatedSession.commandHistory || []), cmd],
+        };
+        setSession(updatedWithHistory);
+
+        if (result.emailSent) {
+          setToastMessage(result.emailSent.message);
+        }
+
+        if (result.itrData) {
+          setActiveItrData(result.itrData);
+          try {
+            localStorage.setItem('amadeus_active_ticket', JSON.stringify(result.itrData));
+          } catch {}
+        }
+
+        const isError = Boolean(result.isError);
+
+        const responseItem: TerminalOutputItem = {
+          id: `res-${Date.now() + 1}`,
+          type: 'response',
+          content: result.output,
+          isItr: Boolean(result.isItr || result.itrData),
+          isTtp: Boolean(result.isTtp || cmd.trim().toUpperCase().startsWith('TTP')),
+          itrData: result.itrData,
+        };
+
+        setTabs((prev) =>
+          prev.map((t) => {
+            if (t.id !== activeTabId) return t;
+            const newOutputs = t.outputs.map((item) => {
+              if (item.id === loadingId) return responseItem;
+              if (item.id === cmdId) return { ...item, isError };
+              return item;
+            });
+            return { ...t, outputs: newOutputs };
+          })
+        );
+
+        setIsSearching(false);
+      }, 500);
+
+      return;
+    }
+
+    // Other commands execute INSTANTLY (0 delay)
+    const result = executeGdsCommand(cmd, sessionRef.current, savedPnrsRef.current);
+    const updatedWithHistory: PnrSession = {
+      ...result.updatedSession,
+      commandHistory: [...(result.updatedSession.commandHistory || []), cmd],
+    };
+    setSession(updatedWithHistory);
+
+    const isError = Boolean(result.isError);
 
     const cmdItem: TerminalOutputItem = {
       id: `cmd-${Date.now()}`,
       type: 'command',
       content: cmd.toLowerCase(),
+      isError,
     };
 
     // If IG command is run, reset screen back to fresh work area with IGNORED at top
@@ -188,6 +312,7 @@ export default function App() {
                     id: `cmd-${Date.now()}`,
                     type: 'command',
                     content: 'ig',
+                    isError: false,
                   },
                   {
                     id: `res-${Date.now() + 1}`,
@@ -236,9 +361,9 @@ export default function App() {
       const receiptToShow =
         result.itrData ||
         activeItrData ||
-        buildItrReceiptData(result.updatedSession, ticketSalesDatabase) ||
-        buildItrReceiptData(session, ticketSalesDatabase) ||
-        buildItrReceiptData(createInitialSession(), ticketSalesDatabase);
+        buildItrReceiptData(result.updatedSession, ticketSalesDatabase, activeTab.commandHistory) ||
+        buildItrReceiptData(session, ticketSalesDatabase, activeTab.commandHistory) ||
+        buildItrReceiptData(createInitialSession(), ticketSalesDatabase, activeTab.commandHistory);
       if (receiptToShow) {
         setActiveItrData(receiptToShow);
         try {
@@ -297,6 +422,7 @@ export default function App() {
       >
         <StandaloneTicketView
           initialData={activeItrData}
+          commandHistory={activeTab.commandHistory}
           onBack={() => {
             setIsStandaloneView(false);
             if (typeof window !== 'undefined') {
@@ -361,12 +487,14 @@ export default function App() {
           isSplitView={isSplitView}
           onSelectFlightLine={handleSelectFlightLine}
           onSelectFlightDo={handleSelectFlightDo}
+          isSearching={isSearching}
+          onOpenShareModal={handleOpenShareModal}
           onOpenItrModal={(data) => {
             const receipt =
               data ||
               activeItrData ||
-              buildItrReceiptData(session, ticketSalesDatabase) ||
-              buildItrReceiptData(createInitialSession(), ticketSalesDatabase);
+              buildItrReceiptData(sessionRef.current, ticketSalesDatabase, activeTab.commandHistory) ||
+              buildItrReceiptData(createInitialSession(), ticketSalesDatabase, activeTab.commandHistory);
             if (receipt) {
               setActiveItrData(receipt);
               try {
@@ -379,8 +507,8 @@ export default function App() {
             const target =
               data ||
               activeItrData ||
-              buildItrReceiptData(session, ticketSalesDatabase) ||
-              buildItrReceiptData(createInitialSession(), ticketSalesDatabase);
+              buildItrReceiptData(sessionRef.current, ticketSalesDatabase, activeTab.commandHistory) ||
+              buildItrReceiptData(createInitialSession(), ticketSalesDatabase, activeTab.commandHistory);
             if (target) {
               printItrDocument(target);
             } else {
@@ -450,6 +578,7 @@ export default function App() {
         <ItrReceiptModal
           isOpen={isItrModalOpen}
           data={activeItrData}
+          commandHistory={activeTab.commandHistory}
           onClose={() => {
             setIsItrModalOpen(false);
             setTimeout(() => {
@@ -462,6 +591,20 @@ export default function App() {
           onSendEmail={(email) => handleExecuteCommand(`ITR-EML-${email}`)}
         />
       </ErrorBoundary>
+
+      {/* 9. Share Your Command Modal */}
+      <ShareCommandModal
+        isOpen={isShareModalOpen}
+        onClose={() => setIsShareModalOpen(false)}
+        ticketData={
+          shareModalData ||
+          activeItrData ||
+          buildItrReceiptData(sessionRef.current, ticketSalesDatabase, activeTab.commandHistory) ||
+          buildItrReceiptData(createInitialSession(), ticketSalesDatabase, activeTab.commandHistory)
+        }
+        commandHistory={activeTab.commandHistory}
+        onRunCommandInTerminal={handleExecuteCommand}
+      />
     </div>
   );
 }

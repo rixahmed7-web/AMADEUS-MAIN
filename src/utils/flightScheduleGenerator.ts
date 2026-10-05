@@ -722,6 +722,14 @@ const parseSingleLeg = (
   let orig = defaultOrig;
   let dest = defaultDest;
 
+  // Pattern 0: 6-letter City Pair only without date (e.g. "DACCGP", "DACDXB", "CGPDAC")
+  const m0 = compact.match(/^([A-Z]{3})([A-Z]{3})$/);
+  if (m0 && !MONTHS.includes(m0[1]) && !MONTHS.includes(m0[2])) {
+    orig = m0[1];
+    dest = m0[2];
+    return { date, orig, dest };
+  }
+
   // Pattern 1: Day (1-2 digits) + 3-letter Month + Optional Year + Orig (3 letters) + Dest (3 letters)
   // e.g. "20OCTDACRUH", "25NOVJEDDAC"
   const m1 = compact.match(/^(\d{1,2})([A-Z]{3})(?:\d{2}|\d{4})?([A-Z]{3})([A-Z]{3})$/);
@@ -763,6 +771,13 @@ const parseSingleLeg = (
   if (dateToken && MONTHS.includes(dateToken[2])) {
     date = `${dateToken[1].padStart(2, '0')}${dateToken[2]}`;
     rem = rem.replace(dateToken[0], ' ').trim();
+  }
+
+  const rawLetters = rem.replace(/[^A-Z]/g, ' ').split(/\s+/).filter(Boolean);
+  if (rawLetters.length === 1 && rawLetters[0].length === 6 && !MONTHS.includes(rawLetters[0].slice(0, 3)) && !MONTHS.includes(rawLetters[0].slice(3, 6))) {
+    orig = rawLetters[0].slice(0, 3);
+    dest = rawLetters[0].slice(3, 6);
+    return { date, orig, dest };
   }
 
   const cleanTokens = rem.replace(/[^A-Z]/g, ' ').split(/\s+/).filter((t) => t.length === 3 && !MONTHS.includes(t));
@@ -879,22 +894,28 @@ export interface ParsedFxdParams {
 
 export const parseFxdInput = (rawCmd: string): ParsedFxdParams => {
   const upper = rawCmd.toUpperCase().trim();
-  const body = upper.replace(/^FXD\s*/, '').trim();
+  let body = upper.replace(/^FXD\s*/, '').trim();
 
   // 1. Airline filter
   let airlineFilter: string | undefined = undefined;
   const airMatch = body.match(/(?:\/\/|\/|\s)A\s*([A-Z0-9]{2})/);
   if (airMatch) {
     airlineFilter = airMatch[1];
+    body = body.replace(airMatch[0], ' ');
   } else {
     const trailingAir = body.match(/(?:\/\/|\/)([A-Z0-9]{2})$/);
-    if (trailingAir && AIRLINES.some((a) => a.code === trailingAir[1])) {
+    if (trailingAir && !['KC', 'KD', 'KJ', 'KY', 'OW', 'RT', 'CH', 'IN'].includes(trailingAir[1])) {
       airlineFilter = trailingAir[1];
+      body = body.replace(trailingAir[0], ' ');
     }
   }
 
   // 2. Cabin class
-  const isBusiness = body.includes('//KC') || body.includes('/KC') || body.includes('//C') || body.includes('/C');
+  let isBusiness = false;
+  if (/\/(?:KC|KD|KJ|C)\b/.test(body) || /\/\/(?:KC|KD|KJ|C)\b/.test(body)) {
+    isBusiness = true;
+    body = body.replace(/(?:\/\/|\/)(?:KC|KD|KJ|C)\b/g, ' ');
+  }
 
   // 3. Passenger counts
   let adt = 1;
@@ -902,78 +923,147 @@ export const parseFxdInput = (rawCmd: string): ParsedFxdParams => {
   let inf = 0;
 
   const paxMatch = body.match(/PAX\/(\d+)/);
-  if (paxMatch) adt = parseInt(paxMatch[1], 10);
+  if (paxMatch) {
+    adt = parseInt(paxMatch[1], 10);
+    body = body.replace(paxMatch[0], ' ');
+  }
 
-  if (body.includes('/RCH') || body.includes('/CHD')) chd = 1;
   const chdMatch = body.match(/CHD\/(\d+)/);
-  if (chdMatch) chd = parseInt(chdMatch[1], 10);
+  if (chdMatch) {
+    chd = parseInt(chdMatch[1], 10);
+    body = body.replace(chdMatch[0], ' ');
+  } else if (body.includes('/RCH') || body.includes('/CHD')) {
+    chd = 1;
+    body = body.replace(/\/(?:RCH|CHD)\b/g, ' ');
+  }
 
   const infMatch = body.match(/INF\/(\d+)/);
-  if (infMatch) inf = parseInt(infMatch[1], 10);
-  else if (body.includes('/INF')) inf = 1;
-
-  // 4. Dates
-  const dateMatches: string[] = [];
-  const dateRegex = /(?:^|[\s\/-])(?:D)?(\d{1,2}[A-Z]{3})(?:\d{2,4})?(?:[\s\/-]|$)/g;
-  let dMatch;
-  while ((dMatch = dateRegex.exec(body)) !== null) {
-    const rawD = dMatch[1];
-    if (!dateMatches.includes(rawD)) {
-      dateMatches.push(rawD);
-    }
+  if (infMatch) {
+    inf = parseInt(infMatch[1], 10);
+    body = body.replace(infMatch[0], ' ');
+  } else if (body.includes('/INF')) {
+    inf = 1;
+    body = body.replace(/\/INF\b/g, ' ');
   }
 
-  const legMatches = [...body.matchAll(/\/D(\d{1,2}[A-Z]{3})([A-Z]{3})/g)];
-  let outboundDate = dateMatches[0] || (legMatches[0] ? legMatches[0][1] : '25OCT');
+  body = body.replace(/\/\//g, ' ').trim();
+
+  let outboundDate = '25OCT';
   let returnDate: string | undefined = undefined;
   let isRoundTrip = false;
-
-  if (legMatches.length >= 2) {
-    isRoundTrip = true;
-    returnDate = legMatches[1][1];
-  } else if (dateMatches.length >= 2) {
-    isRoundTrip = true;
-    returnDate = dateMatches[1];
-  }
-
-  // 5. Origin & Destination cities
   let orig = 'DAC';
-  let dest = 'DXB';
+  let dest = 'CGP';
 
-  const origFromStart = body.match(/^([A-Z]{3})/);
-  if (origFromStart && !MONTHS.includes(origFromStart[1])) {
-    orig = origFromStart[1];
+  // 4. Amadeus /D<DATE><DEST> syntax e.g. "DAC/D20NOVJFK/D19DECDAC"
+  const legMatches = [...body.matchAll(/(?:\/|\s|^)D(\d{1,2}[A-Z]{3})(?:\d{2}|\d{4})?([A-Z]{3})/g)];
+  if (legMatches.length > 0) {
+    outboundDate = legMatches[0][1];
+    dest = legMatches[0][2];
+    const prefix = body.split(legMatches[0][0])[0].trim().replace(/[^A-Z]/g, '');
+    if (prefix.length === 3 && !MONTHS.includes(prefix)) {
+      orig = prefix;
+    }
+    if (legMatches.length >= 2) {
+      isRoundTrip = true;
+      returnDate = legMatches[1][1];
+    }
+    if (orig === dest) dest = orig === 'DAC' ? 'CGP' : 'DAC';
+    return {
+      orig,
+      dest,
+      outboundDate: cleanGdsDate(outboundDate),
+      isRoundTrip,
+      returnDate: returnDate ? cleanGdsDate(returnDate) : undefined,
+      airlineFilter,
+      isBusiness,
+      adt,
+      chd,
+      inf,
+    };
   }
 
-  if (legMatches.length > 0) {
-    dest = legMatches[0][2];
-  } else {
-    const cleanTokens = body
-      .replace(/(?:\/\/|\/|\s)A\s*[A-Z0-9]{2}/g, '')
-      .replace(/\/D\d{1,2}[A-Z]{3}/g, '')
-      .replace(/\d{1,2}[A-Z]{3}/g, '')
-      .replace(/\/\/[A-Z0-9\/]+/g, '')
-      .replace(/[^A-Z]/g, ' ')
-      .split(/\s+/)
-      .filter((t) => t.length === 3 && !MONTHS.includes(t));
+  // 5. Handle asterisk '*' for round trip e.g. "20OCTDACCGP*25OCTCGPDAC"
+  let mainPart = body;
+  let returnPart = '';
+  if (body.includes('*')) {
+    const parts = body.split('*');
+    mainPart = parts[0];
+    returnPart = parts[1] || '';
+    isRoundTrip = true;
+  }
 
-    if (cleanTokens.length >= 2) {
-      orig = cleanTokens[0];
-      dest = cleanTokens[1];
-    } else if (cleanTokens.length === 1) {
-      if (cleanTokens[0] === 'DAC') {
-        orig = 'DAC';
-        dest = 'DXB';
+  const compact = mainPart.replace(/[\s\/-]+/g, '');
+
+  // Pattern 1: Date + Orig + Dest e.g. "20OCTDACCGP", "20OCT26DACCGP"
+  const m1 = compact.match(/^(\d{1,2})([A-Z]{3})(?:\d{2}|\d{4})?([A-Z]{3})([A-Z]{3})$/);
+  if (m1 && MONTHS.includes(m1[2])) {
+    outboundDate = `${m1[1].padStart(2, '0')}${m1[2]}`;
+    orig = m1[3];
+    dest = m1[4];
+  } else {
+    // Pattern 2: Orig + Dest + Date e.g. "DACCGP20OCT", "DACCGP20OCT26"
+    const m2 = compact.match(/^([A-Z]{3})([A-Z]{3})(\d{1,2})([A-Z]{3})(?:\d{2}|\d{4})?$/);
+    if (m2 && MONTHS.includes(m2[4])) {
+      orig = m2[1];
+      dest = m2[2];
+      outboundDate = `${m2[3].padStart(2, '0')}${m2[4]}`;
+    } else {
+      // Pattern 3: Orig + Date + Dest e.g. "DAC20OCTCGP", "DAC20OCTJFK"
+      const m3 = compact.match(/^([A-Z]{3})(\d{1,2})([A-Z]{3})(?:\d{2}|\d{4})?([A-Z]{3})$/);
+      if (m3 && MONTHS.includes(m3[3])) {
+        orig = m3[1];
+        outboundDate = `${m3[2].padStart(2, '0')}${m3[3]}`;
+        dest = m3[4];
       } else {
-        orig = 'DAC';
-        dest = cleanTokens[0];
+        // Pattern 4: Orig + Dest only e.g. "DACCGP", "DACDXB", "CGPDAC"
+        const m4 = compact.match(/^([A-Z]{3})([A-Z]{3})$/);
+        if (m4 && !MONTHS.includes(m4[1]) && !MONTHS.includes(m4[2])) {
+          orig = m4[1];
+          dest = m4[2];
+        } else {
+          // Token-based fallback e.g. "20OCT DAC CGP", "DAC CGP", "DAC/CGP"
+          const dToken = mainPart.match(/(\d{1,2})([A-Z]{3})(?:\d{2}|\d{4})?/);
+          if (dToken && MONTHS.includes(dToken[2])) {
+            outboundDate = `${dToken[1].padStart(2, '0')}${dToken[2]}`;
+            mainPart = mainPart.replace(dToken[0], ' ');
+          }
+          const rawLetters = mainPart.replace(/[^A-Z]/g, ' ').split(/\s+/).filter(Boolean);
+          if (rawLetters.length === 1 && rawLetters[0].length === 6 && !MONTHS.includes(rawLetters[0].slice(0, 3)) && !MONTHS.includes(rawLetters[0].slice(3, 6))) {
+            orig = rawLetters[0].slice(0, 3);
+            dest = rawLetters[0].slice(3, 6);
+          } else {
+            const tokens = mainPart.replace(/[^A-Z]/g, ' ').split(/\s+/).filter((t) => t.length === 3 && !MONTHS.includes(t));
+            if (tokens.length >= 2) {
+              orig = tokens[0];
+              dest = tokens[1];
+            } else if (tokens.length === 1) {
+              if (tokens[0] === 'DAC') {
+                orig = 'DAC';
+                dest = 'CGP';
+              } else {
+                orig = 'DAC';
+                dest = tokens[0];
+              }
+            }
+          }
+        }
       }
     }
   }
 
+  // Parse return date if returnPart exists
+  if (returnPart) {
+    const retCompact = returnPart.replace(/[\s\/-]+/g, '');
+    const rm = retCompact.match(/(\d{1,2})([A-Z]{3})/);
+    if (rm && MONTHS.includes(rm[2])) {
+      returnDate = `${rm[1].padStart(2, '0')}${rm[2]}`;
+      isRoundTrip = true;
+    }
+  }
+
   if (orig === 'SEP' || MONTHS.includes(orig)) orig = 'DAC';
-  if (dest === 'SEP' || MONTHS.includes(dest)) dest = orig === 'DAC' ? 'DXB' : 'DAC';
-  if (orig === dest) dest = orig === 'DAC' ? 'DXB' : 'DAC';
+  if (dest === 'SEP' || MONTHS.includes(dest)) dest = orig === 'DAC' ? 'CGP' : 'DAC';
+  if (orig === dest) dest = orig === 'DAC' ? 'CGP' : 'DAC';
 
   return {
     orig,
@@ -1159,6 +1249,41 @@ export const generateAvailability = (
 // 6. GENERATE LOWEST FARE SEARCH (FXD) - DIVERSE MULTI-AIRLINE MIX
 // ======================================================================
 
+// Airline pricing multipliers for realistic carrier tier pricing
+export const AIRLINE_PRICING_FACTORS: Record<string, number> = {
+  // Low-cost / Budget carriers
+  FZ: 0.92,
+  XY: 0.91,
+  J9: 0.93,
+  // Domestic carriers
+  '2A': 0.97,
+  BS: 1.00,
+  BG: 0.99,
+  VQ: 1.02,
+  // Regional / Standard carriers
+  GF: 1.03,
+  KU: 1.02,
+  WY: 1.03,
+  // Premium legacy carriers
+  SV: 1.06,
+  TK: 1.07,
+  EK: 1.10,
+  QR: 1.12,
+  SQ: 1.12,
+  BA: 1.15,
+  LH: 1.14,
+  AF: 1.13,
+};
+
+// Deterministic hash to generate realistic natural jitter without external random state
+export const getDeterministicHash = (str: string): number => {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) {
+    h = (Math.imul(31, h) + str.charCodeAt(i)) | 0;
+  }
+  return h;
+};
+
 export const calculateSectorFare = (
   orig: string,
   dest: string,
@@ -1170,40 +1295,135 @@ export const calculateSectorFare = (
   const oCountry = getAirportCountry(o);
   const dCountry = getAirportCountry(d);
 
-  let base = 70000;
-  let tax = 20000;
+  let base = 65000;
+  let tax = 22000;
 
+  // 1. Domestic Bangladesh Routes (Realistic fares around 4,000 BDT)
   if (oCountry === 'BD' && dCountry === 'BD') {
-    base = 5200;
-    tax = 1400;
-  } else if (['CCU', 'DEL', 'BOM', 'MAA', 'KTM', 'CMB'].includes(d) || ['CCU', 'DEL', 'BOM'].includes(o)) {
-    base = 16500;
-    tax = 5800;
-  } else if (['SIN', 'BKK', 'KUL', 'HKG', 'CAN'].includes(d) || ['SIN', 'BKK', 'KUL'].includes(o)) {
-    base = 39500;
-    tax = 13800;
-  } else if (['JED', 'MED', 'RUH', 'DMM', 'DXB', 'SHJ', 'AUH', 'DOH', 'KWI', 'BAH', 'MCT'].includes(d) || ['JED', 'RUH', 'DXB', 'DOH'].includes(o)) {
-    base = 54500;
+    if ((o === 'DAC' && d === 'CGP') || (o === 'CGP' && d === 'DAC')) {
+      // Dhaka <-> Chittagong (Standard around 4,000 BDT)
+      base = 3300;
+      tax = 750;
+    } else if ((o === 'DAC' && d === 'CXB') || (o === 'CXB' && d === 'DAC')) {
+      // Dhaka <-> Cox's Bazar
+      base = 4400;
+      tax = 800;
+    } else if ((o === 'DAC' && d === 'ZYL') || (o === 'ZYL' && d === 'DAC')) {
+      // Dhaka <-> Sylhet
+      base = 3200;
+      tax = 700;
+    } else if ((o === 'DAC' && d === 'JSR') || (o === 'JSR' && d === 'DAC')) {
+      // Dhaka <-> Jessore
+      base = 3100;
+      tax = 650;
+    } else if ((o === 'DAC' && d === 'RJH') || (o === 'RJH' && d === 'DAC')) {
+      // Dhaka <-> Rajshahi
+      base = 3250;
+      tax = 700;
+    } else if ((o === 'DAC' && d === 'SPD') || (o === 'SPD' && d === 'DAC')) {
+      // Dhaka <-> Saidpur
+      base = 3600;
+      tax = 750;
+    } else if ((o === 'DAC' && d === 'BZL') || (o === 'BZL' && d === 'DAC')) {
+      // Dhaka <-> Barisal
+      base = 2950;
+      tax = 600;
+    } else {
+      // General domestic inter-city
+      base = 3350;
+      tax = 750;
+    }
+  } else if (d === 'CCU' || o === 'CCU') {
+    // 2. Kolkata Short-haul International
+    base = 9200;
+    tax = 3400;
+  } else if (['DEL', 'BOM', 'MAA', 'BLR', 'HYD', 'KTM', 'CMB'].includes(d) || ['DEL', 'BOM', 'MAA', 'BLR', 'HYD', 'KTM', 'CMB'].includes(o)) {
+    // 3. Regional South Asia (India, Nepal, Sri Lanka)
+    base = 15500;
+    tax = 5400;
+  } else if (['BKK', 'DMK', 'HKT'].includes(d) || ['BKK', 'DMK', 'HKT'].includes(o)) {
+    // 4. Bangkok / Thailand
+    base = 22500;
+    tax = 7800;
+  } else if (['KUL', 'PEN'].includes(d) || ['KUL', 'PEN'].includes(o)) {
+    // 5. Kuala Lumpur / Malaysia
+    base = 25500;
+    tax = 8700;
+  } else if (['SIN'].includes(d) || ['SIN'].includes(o)) {
+    // 6. Singapore
+    base = 28500;
+    tax = 9800;
+  } else if (['DXB', 'SHJ', 'AUH', 'DWC'].includes(d) || ['DXB', 'SHJ', 'AUH', 'DWC'].includes(o)) {
+    // 7. United Arab Emirates (Dubai, Sharjah, Abu Dhabi)
+    base = 34500;
+    tax = 12200;
+  } else if (['DOH'].includes(d) || ['DOH'].includes(o)) {
+    // 8. Doha / Qatar
+    base = 36000;
+    tax = 12800;
+  } else if (['MCT', 'BAH', 'KWI'].includes(d) || ['MCT', 'BAH', 'KWI'].includes(o)) {
+    // 9. Gulf (Muscat, Bahrain, Kuwait)
+    base = 35000;
+    tax = 12500;
+  } else if (['JED', 'MED'].includes(d) || ['JED', 'MED'].includes(o)) {
+    // 10. Saudi Arabia (Western Province - Jeddah, Medina)
+    base = 46500;
+    tax = 16500;
+  } else if (['RUH', 'DMM'].includes(d) || ['RUH', 'DMM'].includes(o)) {
+    // 11. Saudi Arabia (Central/Eastern - Riyadh, Dammam)
+    base = 41000;
+    tax = 14800;
+  } else if (['IST', 'SAW'].includes(d) || ['IST', 'SAW'].includes(o)) {
+    // 12. Istanbul / Turkey
+    base = 51000;
     tax = 18500;
-  } else if (['LHR', 'LGW', 'MAN', 'CDG', 'FRA', 'MUC', 'AMS', 'FCO', 'MXP', 'IST'].includes(d) || ['LHR', 'CDG', 'FRA', 'AMS'].includes(o)) {
+  } else if (['LHR', 'LGW', 'MAN', 'LON', 'BHX', 'EDI'].includes(d) || ['LHR', 'LGW', 'MAN', 'LON', 'BHX', 'EDI'].includes(o)) {
+    // 13. United Kingdom (London, Manchester)
+    base = 68000;
+    tax = 25500;
+  } else if (['CDG', 'FRA', 'AMS', 'MUC', 'FCO', 'MXP', 'BER', 'ORY', 'NCE'].includes(d) || ['CDG', 'FRA', 'AMS', 'MUC', 'FCO', 'MXP', 'BER', 'ORY', 'NCE'].includes(o)) {
+    // 14. Western Europe (Paris, Frankfurt, Amsterdam, Rome, Milan)
+    base = 72000;
+    tax = 26500;
+  } else if (['JFK', 'EWR', 'NYC', 'YYZ', 'ORD', 'IAD', 'ATL', 'DFW', 'IAH', 'BOS'].includes(d) || ['JFK', 'ORD', 'YYZ'].includes(o)) {
+    // 15. North America East (New York, Toronto, Chicago, Washington)
+    base = 92000;
+    tax = 34000;
+  } else if (['LAX', 'SFO', 'YVR', 'SEA'].includes(d) || ['LAX', 'SFO', 'YVR', 'SEA'].includes(o)) {
+    // 16. North America West (Los Angeles, San Francisco, Vancouver)
     base = 98000;
-    tax = 29500;
-  } else if (['JFK', 'EWR', 'NYC', 'YYZ', 'YVR', 'YUL', 'ORD', 'LAX', 'SFO', 'IAD', 'ATL', 'DFW', 'IAH'].includes(d) || ['JFK', 'ORD', 'YYZ'].includes(o)) {
-    base = 112000;
-    tax = 33000;
+    tax = 36500;
+  } else if (['CAN', 'PVG', 'PEK', 'PKX'].includes(d) || ['CAN', 'PVG'].includes(o)) {
+    // 17. China (Guangzhou, Shanghai, Beijing)
+    base = 38500;
+    tax = 13800;
+  } else if (['NRT', 'HND', 'KIX', 'ICN'].includes(d) || ['NRT', 'HND', 'KIX', 'ICN'].includes(o)) {
+    // 18. Japan & Korea
+    base = 52000;
+    tax = 18200;
+  } else if (['SYD', 'MEL', 'BNE', 'PER'].includes(d) || ['SYD', 'MEL'].includes(o)) {
+    // 19. Australia
+    base = 76000;
+    tax = 27500;
   } else {
-    base = 86000;
-    tax = 26000;
+    // 20. Other International Routes
+    base = 65000;
+    tax = 22000;
   }
 
   if (isBusiness) {
-    base = Math.round(base * 2.5);
-    tax = Math.round(tax * 1.5);
+    if (oCountry === 'BD' && dCountry === 'BD') {
+      base = Math.round(base * 2.2);
+      tax = Math.round(tax * 1.3);
+    } else {
+      base = Math.round(base * 2.4);
+      tax = Math.round(tax * 1.4);
+    }
   }
 
   if (isRoundTrip) {
-    base = Math.round(base * 1.78);
-    tax = Math.round(tax * 1.72);
+    base = Math.round(base * 1.82);
+    tax = Math.round(tax * 1.78);
   }
 
   return {
@@ -1221,9 +1441,10 @@ export const generateLowestFareSearch = (
 
   const oCountry = getAirportCountry(orig);
   const dCountry = getAirportCountry(dest);
+  const isDomestic = oCountry === 'BD' && dCountry === 'BD';
 
   // STRICT BANGLADESH RESTRICTION
-  if (airlineFilter && ['BG', 'BS', 'VQ', '2A'].includes(airlineFilter) && oCountry !== 'BD' && dCountry !== 'BD') {
+  if (airlineFilter && ['BG', 'BS', 'VQ', '2A'].includes(airlineFilter) && !isDomestic && oCountry !== 'BD' && dCountry !== 'BD') {
     const text = [
       `FXD BEST BUY - FARE SEARCH RESULTS: ${orig}-${dest} / ${outboundDate}`,
       `NO FARES AVAILABLE FOR CARRIER ${airlineFilter} ON SECTOR ${orig}-${dest}`,
@@ -1240,9 +1461,26 @@ export const generateLowestFareSearch = (
 
   roster.forEach((plan, index) => {
     const optNum = index + 1;
-    const priceStep = 1 + index * 0.042;
-    const basePerPax = Math.round(sectorFare.base * priceStep);
-    const taxPerPax = Math.round(sectorFare.tax * priceStep);
+    const airFactor = AIRLINE_PRICING_FACTORS[plan.airline] || 1.0;
+    const classFactor = 1 + index * (isDomestic ? 0.032 : 0.038);
+
+    // Dynamic route and date jitter (-2.5% to +2.5%) for realistic variation
+    const seedKey = `${orig}-${dest}-${outboundDate}-${plan.airline}-${plan.flightNumber}-${index}`;
+    const hash = Math.abs(getDeterministicHash(seedKey));
+    const jitter = (((hash % 100) / 100) - 0.5) * 0.05;
+
+    const combinedMultiplier = airFactor * classFactor * (1 + jitter);
+
+    let basePerPax = Math.round(sectorFare.base * combinedMultiplier);
+    let taxPerPax = Math.round(sectorFare.tax * (1 + index * 0.015 + jitter * 0.3));
+
+    if (isDomestic) {
+      basePerPax = Math.round(basePerPax / 50) * 50;
+      taxPerPax = Math.round(taxPerPax / 10) * 10;
+    } else {
+      basePerPax = Math.round(basePerPax / 100) * 100;
+      taxPerPax = Math.round(taxPerPax / 50) * 50;
+    }
 
     const baseTotal = basePerPax * adt + Math.round(basePerPax * 0.75) * chd + Math.round(basePerPax * 0.1) * inf;
     const taxesTotal = taxPerPax * (adt + chd + inf);

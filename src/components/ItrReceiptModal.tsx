@@ -21,13 +21,17 @@ import {
   FileText,
   ExternalLink,
   RefreshCw,
+  Share2,
 } from 'lucide-react';
+import { ShareCommandModal } from './ShareCommandModal';
 
 interface ItrReceiptModalProps {
   isOpen: boolean;
   data: ItrReceiptData | null;
   onClose: () => void;
   onSendEmail?: (email: string) => void;
+  commandHistory?: string[];
+  onDirectPrint?: (data: ItrReceiptData) => void;
 }
 
 export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
@@ -35,6 +39,8 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
   data: propData,
   onClose,
   onSendEmail,
+  commandHistory = [],
+  onDirectPrint,
 }) => {
   // CRITICAL: ALL HOOKS MUST BE UNCONDITIONALLY AT THE TOP LEVEL BEFORE ANY RETURN
   const [internalData, setInternalData] = useState<ItrReceiptData | null>(propData);
@@ -43,6 +49,7 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [logoImgError, setLogoImgError] = useState(false);
   const [downloadSuccessMsg, setDownloadSuccessMsg] = useState<string | null>(null);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const receiptCardRef = useRef<HTMLDivElement>(null);
 
   // Sync prop changes
@@ -253,6 +260,17 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
 
           {/* Action Buttons at Top of Modal */}
           <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              id="btn-share-command-top"
+              onClick={() => setIsShareModalOpen(true)}
+              className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs sm:text-sm rounded shadow-sm flex items-center gap-1.5 transition-all cursor-pointer hover:scale-[1.02]"
+              title="Share or copy the command history for this ticket"
+            >
+              <Share2 className="w-3.5 h-3.5" />
+              <span>Share Your Command</span>
+            </button>
+
             <button
               type="button"
               id="btn-open-new-tab-top"
@@ -669,6 +687,36 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
               </ul>
             </div>
 
+            {/* 7. SHARE YOUR COMMAND BANNER AT BOTTOM OF TICKET */}
+            <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border border-emerald-300 rounded-md p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs shadow-xs no-print">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <Share2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="font-bold text-emerald-950 text-sm flex items-center gap-2">
+                    <span>Share Your Command</span>
+                    <span className="text-[10px] bg-emerald-200 text-emerald-800 font-semibold px-1.5 py-0.2 rounded">
+                      GDS Command History
+                    </span>
+                  </div>
+                  <div className="text-emerald-800 text-[11px]">
+                    এই টিকিটটি তৈরি করতে ব্যবহৃত সমস্ত কমান্ডের হিস্ট্রি (Command History) কপি ও শেয়ার করুন
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                id="btn-share-command-ticket-body"
+                onClick={() => setIsShareModalOpen(true)}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded shadow-xs flex items-center gap-2 transition-all cursor-pointer hover:scale-[1.02]"
+                title="Share or copy the command history for this ticket"
+              >
+                <Share2 className="w-3.5 h-3.5 text-white" />
+                <span>Share Your Command</span>
+              </button>
+            </div>
+
             {/* Document Verification Notice */}
             <div className="text-[10.5px] text-slate-400 text-center border-t border-slate-200 pt-2.5">
               This is a computer-generated official airline electronic booking confirmation and does not require a physical signature &bull; Issued via Amadeus GDS Certified Interface
@@ -712,6 +760,16 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
             Official E-Ticket Format &bull; IATA Resolution 722g Compliant
           </div>
           <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              id="btn-share-command-bottom"
+              onClick={() => setIsShareModalOpen(true)}
+              className="px-3.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 font-bold text-xs rounded shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="Share or copy the command history for this ticket"
+            >
+              <Share2 className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Share Your Command</span>
+            </button>
             <button
               type="button"
               id="btn-open-new-tab-bottom"
@@ -777,6 +835,14 @@ export const ItrReceiptModal: React.FC<ItrReceiptModalProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Share Your Command Modal */}
+      <ShareCommandModal
+        isOpen={isShareModalOpen}
+        onClose={() => setIsShareModalOpen(false)}
+        ticketData={data}
+        commandHistory={commandHistory.length > 0 ? commandHistory : data?.commandHistory || []}
+      />
     </div>
   );
 };
